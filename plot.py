@@ -8,7 +8,7 @@ from matplotlib import font_manager
 import numpy as np
 import pandas as pd
 
-import config as cfg
+from config import BacktestConfig
 
 def _pick_font_family() -> list[str]:
     """优先选择本机已安装的中文字体，减少 glyph 缺失告警。"""
@@ -32,14 +32,18 @@ plt.rcParams["font.sans-serif"] = _pick_font_family()
 plt.rcParams["axes.unicode_minus"] = False
 
 
-def plot_nav_and_drawdown(daily: pd.DataFrame, trades: list) -> tuple[plt.Figure, plt.Figure]:
+def plot_nav_and_drawdown(
+    config: BacktestConfig,
+    daily: pd.DataFrame,
+    trades: list,
+) -> tuple[plt.Figure, plt.Figure]:
     """
     绘制两张图:
       1. 净值曲线（策略 vs 基准），标注调仓日
       2. 回撤曲线（策略 vs 基准）
     """
     daily = daily.copy()
-    daily["nav"] = daily["total_value"] / cfg.INITIAL_CAPITAL
+    daily["nav"] = daily["total_value"] / config.initial_capital
 
     has_bm = daily["benchmark_close"].notna().any()
     if has_bm:
@@ -147,7 +151,7 @@ def plot_annual_returns(annual_df: pd.DataFrame) -> plt.Figure:
     return fig
 
 
-def plot_holdings_heatmap(holdings: pd.DataFrame) -> plt.Figure:
+def plot_holdings_heatmap(config: BacktestConfig, holdings: pd.DataFrame) -> plt.Figure:
     """
     持仓热力图：展示各股票权重随时间的变化。
     holdings: date + 各股票代码列（股数）
@@ -157,7 +161,7 @@ def plot_holdings_heatmap(holdings: pd.DataFrame) -> plt.Figure:
     df["date"] = pd.to_datetime(df["date"])
     df["quarter"] = df["date"].dt.to_period("Q")
     quarterly = df.groupby("quarter", as_index=False).last()
-    stock_name_map = dict(cfg.STOCK_POOL)
+    stock_name_map = config.stock_name_map
 
     # 取价格估算权重（直接用日线数据太重，这里用股数替代，改为比例热力图）
     stock_cols = [c for c in quarterly.columns if c not in ("date", "quarter")]

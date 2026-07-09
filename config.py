@@ -1,93 +1,84 @@
 """
-策略回测系统 - 可配参数
-修改本文件即可调整回测参数，无需改动其他模块。
+策略回测系统配置。
 """
 
-# ============================================================
-# 回测时间范围
-# ============================================================
-START_DATE = "2021-01-04"  # 回测起始日期（空仓起点）
-END_DATE = "2026-06-30"  # 回测结束日期
+from __future__ import annotations
 
-# ============================================================
-# 数据源配置
-# ============================================================
-# Tushare Pro Token；当前仅从本文件读取
-TUSHARE_TOKEN = "AelZc4nygN5K6_YvBZBKnA3Jz1nne6kHBrLMvRnEeKA"
-TUSHARE_PROXY_URL = "https://tu.brze.top"
-CACHE_DIR = "cache"
-CACHE_ENABLED = True
-CACHE_FORCE_REFRESH = False
+from dataclasses import dataclass
 
-# 行情复权方式：
-# None / "" : 不复权，适合结合分红送转事件做真实交易撮合
-# qfq       : 前复权
-# hfq       : 后复权
-PRICE_ADJ = None
 
-# ============================================================
-# 资金与仓位
-# ============================================================
-INITIAL_CAPITAL = 5_000_000  # 初始本金（元）
-TARGET_WEIGHT = 0.05  # 单只目标仓位（5%）
-WEIGHT_TOLERANCE = 0.001  # 仓位误差容忍（0.1%）
+@dataclass(frozen=True)
+class BacktestConfig:
+    start_date: str
+    end_date: str
+    tushare_token: str
+    tushare_proxy_url: str
+    cache_dir: str
+    cache_enabled: bool
+    cache_force_refresh: bool
+    price_adj: str | None
+    initial_capital: float
+    target_weight: float
+    weight_tolerance: float
+    rebalance_schedule: list[str]
+    dividend_mode: str
+    stock_pool: list[tuple[str, str]]
+    commission_rate: float
+    commission_min: float
+    stamp_tax_rate: float
+    transfer_fee_rate: float
+    benchmark_index: str
+    risk_free_rate: float
 
-# ============================================================
-# 调仓计划
-# ============================================================
-# 每年的调仓日（MM-DD 格式），可增减
-REBALANCE_SCHEDULE = ["05-01", "11-01"]
+    @property
+    def stock_codes(self) -> list[str]:
+        return [code for code, _ in self.stock_pool]
 
-# ============================================================
-# 分红处理方式
-# ============================================================
-# reinvest: 分红进入可投资现金，调仓时可继续买入
-# cash: 分红留存在现金账户，不参与后续买入
-DIVIDEND_MODE = "reinvest"
+    @property
+    def stock_name_map(self) -> dict[str, str]:
+        return dict(self.stock_pool)
 
-# ============================================================
-# 股票池
-# ============================================================
-STOCK_POOL = [
-    ("603288", "海天味业"),
-    ("600529", "山东药玻"),
-    ("600298", "安琪酵母"),
-    ("600329", "达仁堂"),
-    ("600332", "白云山"),
-    ("600285", "羚锐制药"),
-    ("002507", "涪陵榨菜"),
-    ("600161", "天坛生物"),
-    ("600085", "同仁堂"),
-    ("600887", "伊利股份"),
-    ("000538", "云南白药"),
-    ("600809", "山西汾酒"),
-    ("600305", "恒顺醋业"),
-    ("601888", "中国中免"),
-    ("001914", "招商积余"),
-    ("000423", "东阿阿胶"),
-    ("600600", "青岛啤酒"),
-    ("002304", "洋河股份"),
-    ("000568", "泸州老窖"),
-    ("000858", "五粮液"),
-]
 
-# 从 STOCK_POOL 提取纯代码列表（方便遍历）
-STOCK_CODES = [code for code, _ in STOCK_POOL]
-
-# ============================================================
-# 交易成本
-# ============================================================
-COMMISSION_RATE = 0.0001  # 佣金费率 万1（0.01%）
-COMMISSION_MIN = 0  # 最低佣金（免5 → 0）
-STAMP_TAX_RATE = 0.0005  # 印花税 万5（0.05%），仅卖出
-TRANSFER_FEE_RATE = 0.00001  # 过户费 十万分之一（0.001%）
-
-# ============================================================
-# 基准指数（用于超额收益对比）
-# ============================================================
-BENCHMARK_INDEX = "000300.SH"  # 沪深300；也可换为中证500("000905.SH")等
-
-# ============================================================
-# 无风险利率（用于夏普比率计算）
-# ============================================================
-RISK_FREE_RATE = 0.02  # 年化 2%
+DEFAULT_CONFIG = BacktestConfig(
+    start_date="2021-01-04",
+    end_date="2026-06-30",
+    tushare_token="AelZc4nygN5K6_YvBZBKnA3Jz1nne6kHBrLMvRnEeKA",
+    tushare_proxy_url="https://tu.brze.top",
+    cache_dir="cache",
+    cache_enabled=True,
+    cache_force_refresh=False,
+    price_adj=None,
+    initial_capital=5_000_000,
+    target_weight=0.05,
+    weight_tolerance=0.001,
+    rebalance_schedule=["05-01", "11-01"],
+    dividend_mode="reinvest",
+    stock_pool=[
+        ("603288", "海天味业"),
+        ("600529", "山东药玻"),
+        ("600298", "安琪酵母"),
+        ("600329", "达仁堂"),
+        ("600332", "白云山"),
+        ("600285", "羚锐制药"),
+        ("002507", "涪陵榨菜"),
+        ("600161", "天坛生物"),
+        ("600085", "同仁堂"),
+        ("600887", "伊利股份"),
+        ("000538", "云南白药"),
+        ("600809", "山西汾酒"),
+        ("600305", "恒顺醋业"),
+        ("601888", "中国中免"),
+        ("001914", "招商积余"),
+        ("000423", "东阿阿胶"),
+        ("600600", "青岛啤酒"),
+        ("002304", "洋河股份"),
+        ("000568", "泸州老窖"),
+        ("000858", "五粮液"),
+    ],
+    commission_rate=0.0001,
+    commission_min=0,
+    stamp_tax_rate=0.0005,
+    transfer_fee_rate=0.00001,
+    benchmark_index="000300.SH",
+    risk_free_rate=0.02,
+)
