@@ -50,6 +50,17 @@ class DailyRecord:
     benchmark_close: Optional[float] = None
 
 
+@dataclass
+class RebalanceSnapshot:
+    """单次调仓前后仓位快照。"""
+    rebalance_date: date
+    phase: str  # "before" | "after"
+    total_value: float
+    cash: float
+    cash_weight: float
+    stock_weights: dict[str, float] = field(default_factory=dict)
+
+
 # ============================================================
 # 工具函数
 # ============================================================
@@ -77,6 +88,16 @@ def _calc_cost(amount: float, is_sell: bool) -> tuple[float, float, float]:
     stamp_tax = amount * cfg.STAMP_TAX_RATE if is_sell else 0.0
     transfer_fee = amount * cfg.TRANSFER_FEE_RATE
     return commission, stamp_tax, transfer_fee
+
+
+def _validate_dividend_mode(mode: str) -> str:
+    """校验分红处理模式。"""
+    valid_modes = {"reinvest", "cash"}
+    if mode not in valid_modes:
+        raise ValueError(
+            f"无效的 DIVIDEND_MODE={mode!r}，可选值为 {sorted(valid_modes)}"
+        )
+    return mode
 
 
 def _generate_rebalance_dates(start: date, end: date,
@@ -138,6 +159,42 @@ def _build_dividend_map(dividends: dict[str, pd.DataFrame]) -> dict[str, dict[da
     return result
 
 
+def _portfolio_snapshot(
+    today: date,
+    shares: dict[str, int],
+    stock_codes: list[str],
+    price_index: dict[str, dict[date, float]],
+    investable_cash: float,
+    dividend_cash: float,
+) -> RebalanceSnapshot:
+    """计算某个时点的组合仓位快照。"""
+    position_values: dict[str, float] = {}
+    equity_value = 0.0
+    for code in stock_codes:
+        px = price_index.get(code, {}).get(today)
+        value = shares[code] * px if (px is not None and px > 0) else 0.0
+        position_values[code] = value
+        equity_value += value
+
+    cash = investable_cash + dividend_cash
+    total_value = equity_value + cash
+    if total_value > 0:
+        stock_weights = {code: position_values[code] / total_value for code in stock_codes}
+        cash_weight = cash / total_value
+    else:
+        stock_weights = {code: 0.0 for code in stock_codes}
+        cash_weight = 0.0
+
+    return RebalanceSnapshot(
+        rebalance_date=today,
+        phase="",
+        total_value=total_value,
+        cash=cash,
+        cash_weight=cash_weight,
+        stock_weights=stock_weights,
+    )
+
+
 # ============================================================
 # 回测主函数
 # ============================================================
@@ -147,7 +204,7 @@ def run_backtest(
     dividends: dict[str, pd.DataFrame],
     trade_dates: set[date],
     benchmark_df: pd.DataFrame,
-) -> tuple[pd.DataFrame, list[Trade], pd.DataFrame]:
+) -> tuple[pd.DataFrame, list[Trade], pd.DataFrame, pd.DataFrame]:
     """
     执行回测。
 
@@ -156,15 +213,19 @@ def run_backtest(
     daily_records : DataFrame  每日净值序列
     trades : list[Trade]       所有交易记录
     holdings : DataFrame       每只股票每日持仓股数
+    rebalance_weights : DataFrame  每次调仓前后仓位占比
     """
     # ---- 初始化 ----
     start = date.fromisoformat(cfg.START_DATE)
     end = date.fromisoformat(cfg.END_DATE)
+    dividend_mode = _validate_dividend_mode(cfg.DIVIDEND_MODE)
 
     # 调仓日列表
     rebalance_dates = _generate_rebalance_dates(start, end, cfg.REBALANCE_SCHEDULE, trade_dates)
     rebalance_set = set(rebalance_dates)
     print(f"  调仓日: {[str(d) for d in rebalance_dates]}")
+    if not rebalance_dates:
+        raise RuntimeError("回测区间内没有可执行的调仓日")
 
     # 分红事件表
     div_map = _build_dividend_map(dividends)
@@ -176,10 +237,13 @@ def run_backtest(
 
     # 初始状态
     shares: dict[str, int] = {code: 0 for code in cfg.STOCK_CODES}
-    cash = float(cfg.INITIAL_CAPITAL)
+    investable_cash = float(cfg.INITIAL_CAPITAL)
+    dividend_cash = 0.0
     trades: list[Trade] = []
     daily_records: list[DailyRecord] = []
     holdings_records: list[dict] = []  # 每日持仓股数
+    rebalance_snapshots: list[RebalanceSnapshot] = []
+    pending_initial_buys = set(cfg.STOCK_CODES)
 
     # 基准指数
     benchmark_map: dict[date, float] = {}
@@ -192,11 +256,14 @@ def run_backtest(
     if not sorted_trade_dates:
         raise RuntimeError("回测区间内无交易日数据")
 
+    initial_trade_date = sorted_trade_dates[0]
+
     stock_codes = cfg.STOCK_CODES
     stock_names = dict(cfg.STOCK_POOL)
     target_weight = cfg.TARGET_WEIGHT
     upper = target_weight + cfg.WEIGHT_TOLERANCE  # 5.1%
     lower = target_weight - cfg.WEIGHT_TOLERANCE  # 4.9%
+    target_value_per = float(cfg.INITIAL_CAPITAL) * target_weight
 
     # ---- 日频循环 ----
     for today in sorted_trade_dates:
@@ -206,6 +273,7 @@ def run_backtest(
             px = price_index.get(code, {}).get(today)
             if px is not None and px > 0:
                 equity_value += shares[code] * px
+        cash = investable_cash + dividend_cash
         total_value = equity_value + cash
 
         # ---- Step 2: 处理分红事件 ----
@@ -217,49 +285,63 @@ def run_backtest(
                 if s > 0:
                     # 现金分红入账
                     if cash_div > 0:
-                        cash += s * cash_div
+                        dividend_amount = s * cash_div
+                        if dividend_mode == "reinvest":
+                            investable_cash += dividend_amount
+                        else:
+                            dividend_cash += dividend_amount
                     # 送股 / 转增
                     if bonus_r > 0 or trans_r > 0:
                         new_s = int(s * (1 + bonus_r + trans_r))
                         shares[code] = new_s
 
         # ---- Step 3: 处理调仓 ----
+        if pending_initial_buys:
+            for code in list(pending_initial_buys):
+                px = price_index.get(code, {}).get(today)
+                if px is None or px <= 0:
+                    continue
+                target_shares = _round_shares(target_value_per / px)
+                if target_shares <= 0:
+                    pending_initial_buys.discard(code)
+                    continue
+                buy_amount = target_shares * px
+                comm, _, trans = _calc_cost(buy_amount, is_sell=False)
+                total_cost = buy_amount + comm + trans
+                if total_cost > investable_cash:
+                    continue
+                investable_cash -= total_cost
+                shares[code] += target_shares
+                pending_initial_buys.discard(code)
+                reason = "建仓" if today == initial_trade_date else "补建仓"
+                trades.append(Trade(
+                    date=today, code=code, name=stock_names.get(code, ""),
+                    action="BUY", price=px, shares=target_shares,
+                    amount=buy_amount, commission=comm, stamp_tax=0.0,
+                    transfer_fee=trans, reason=reason,
+                ))
+
         if today in rebalance_set:
+            before_snapshot = _portfolio_snapshot(
+                today,
+                shares,
+                stock_codes,
+                price_index,
+                investable_cash,
+                dividend_cash,
+            )
+            before_snapshot.phase = "before"
+            rebalance_snapshots.append(before_snapshot)
+
             is_first_buy = all(shares[c] == 0 for c in stock_codes)
 
-            if is_first_buy:
-                # 初始建仓：按目标权重等权买入
-                target_value_per = total_value * target_weight
-                for code in stock_codes:
-                    px = price_index.get(code, {}).get(today)
-                    if px is None or px <= 0:
-                        continue
-                    target_shares = _round_shares(target_value_per / px)
-                    if target_shares <= 0:
-                        continue
-                    buy_amount = target_shares * px
-                    comm, _, trans = _calc_cost(buy_amount, is_sell=False)
-                    total_cost = buy_amount + comm + trans
-                    if total_cost <= cash:
-                        cash -= total_cost
-                        shares[code] += target_shares
-                        trades.append(Trade(
-                            date=today, code=code, name=stock_names.get(code, ""),
-                            action="BUY", price=px, shares=target_shares,
-                            amount=buy_amount, commission=comm, stamp_tax=0.0,
-                            transfer_fee=trans, reason="建仓",
-                        ))
-            else:
+            if not is_first_buy:
                 # 权重复平衡
-                # 重新计算当前市值（含刚处理的分红）
-                equity_value = 0.0
-                current_values: dict[str, float] = {}
-                for code in stock_codes:
-                    px = price_index.get(code, {}).get(today)
-                    val = shares[code] * px if (px and px > 0) else 0.0
-                    current_values[code] = val
-                    equity_value += val
-                total_value = equity_value + cash
+                rebalance_total_value = before_snapshot.total_value
+                current_values = {
+                    code: before_snapshot.stock_weights[code] * rebalance_total_value
+                    for code in stock_codes
+                }
 
                 # --- 阶段一：卖出超配 ---
                 for code in stock_codes:
@@ -267,17 +349,17 @@ def run_backtest(
                     if px is None or px <= 0:
                         continue
                     cur_val = current_values[code]
-                    cur_weight = cur_val / total_value if total_value > 0 else 0.0
+                    cur_weight = cur_val / rebalance_total_value if rebalance_total_value > 0 else 0.0
                     if cur_weight > upper:
                         # 卖出超出目标的部分
-                        target_val = total_value * target_weight
+                        target_val = rebalance_total_value * target_weight
                         sell_amount = cur_val - target_val
                         sell_shares = _round_shares(sell_amount / px)
                         if sell_shares <= 0:
                             continue
                         actual_amount = sell_shares * px
                         comm, stamp, trans = _calc_cost(actual_amount, is_sell=True)
-                        cash += actual_amount - comm - stamp - trans
+                        investable_cash += actual_amount - comm - stamp - trans
                         shares[code] -= sell_shares
                         trades.append(Trade(
                             date=today, code=code, name=stock_names.get(code, ""),
@@ -293,7 +375,8 @@ def run_backtest(
                     px = price_index.get(code, {}).get(today)
                     if px and px > 0:
                         equity_value += shares[code] * px
-                total_value = equity_value + cash
+                cash = investable_cash + dividend_cash
+                rebalance_total_value = equity_value + cash
 
                 # 收集低配股票
                 underweight = []
@@ -302,16 +385,16 @@ def run_backtest(
                     if px is None or px <= 0:
                         continue
                     cur_val = shares[code] * px
-                    cur_weight = cur_val / total_value if total_value > 0 else 0.0
+                    cur_weight = cur_val / rebalance_total_value if rebalance_total_value > 0 else 0.0
                     if cur_weight < lower:
-                        target_val = total_value * target_weight
+                        target_val = rebalance_total_value * target_weight
                         deficit = target_val - cur_val
                         if deficit > 0:
                             underweight.append((code, px, deficit))
 
                 # 按缺额比例分配可用现金
                 total_deficit = sum(d for _, _, d in underweight)
-                available_cash = cash  # 留一点余量避免浮点问题
+                available_cash = investable_cash  # 可用于买入的现金
 
                 for code, px, deficit in underweight:
                     if total_deficit > 0:
@@ -325,8 +408,8 @@ def run_backtest(
                     buy_amount = buy_shares * px
                     comm, _, trans = _calc_cost(buy_amount, is_sell=False)
                     total_cost = buy_amount + comm + trans
-                    if total_cost <= cash:
-                        cash -= total_cost
+                    if total_cost <= investable_cash:
+                        investable_cash -= total_cost
                         shares[code] += buy_shares
                         trades.append(Trade(
                             date=today, code=code, name=stock_names.get(code, ""),
@@ -335,6 +418,17 @@ def run_backtest(
                             transfer_fee=trans, reason="调仓-低配买入",
                         ))
 
+                after_snapshot = _portfolio_snapshot(
+                    today,
+                    shares,
+                    stock_codes,
+                    price_index,
+                    investable_cash,
+                    dividend_cash,
+                )
+                after_snapshot.phase = "after"
+                rebalance_snapshots.append(after_snapshot)
+
         # ---- Step 4: 记录当日快照 ----
         # 重新计算最终市值
         equity_value = 0.0
@@ -342,6 +436,7 @@ def run_backtest(
             px = price_index.get(code, {}).get(today)
             if px is not None and px > 0:
                 equity_value += shares[code] * px
+        cash = investable_cash + dividend_cash
         total_value = equity_value + cash
 
         bm_close = benchmark_map.get(today)
@@ -372,6 +467,19 @@ def run_backtest(
     ])
 
     df_holdings = pd.DataFrame(holdings_records)
+    df_rebalance = pd.DataFrame(
+        [
+            {
+                "rebalance_date": snap.rebalance_date,
+                "phase": snap.phase,
+                "total_value": snap.total_value,
+                "cash": snap.cash,
+                "cash_weight": snap.cash_weight,
+                **{f"{code}_weight": snap.stock_weights.get(code, 0.0) for code in stock_codes},
+            }
+            for snap in rebalance_snapshots
+        ]
+    )
 
     print(f"\n  回测完成: {len(df_daily)} 个交易日, {len(trades)} 笔交易")
-    return df_daily, trades, df_holdings
+    return df_daily, trades, df_holdings, df_rebalance

@@ -32,3 +32,7 @@ Thumbs.db
 # Environment / secrets
 .env
 .env.local
+
+# Project-generated data
+cache/
+output/

@@ -4,13 +4,31 @@
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+from matplotlib import font_manager
 import numpy as np
 import pandas as pd
 
 import config as cfg
 
+def _pick_font_family() -> list[str]:
+    """优先选择本机已安装的中文字体，减少 glyph 缺失告警。"""
+    installed = {font.name for font in font_manager.fontManager.ttflist}
+    preferred = [
+        "PingFang SC",
+        "Hiragino Sans GB",
+        "STHeiti",
+        "Heiti SC",
+        "Arial Unicode MS",
+        "SimHei",
+        "WenQuanYi Micro Hei",
+        "Noto Sans CJK SC",
+    ]
+    available = [name for name in preferred if name in installed]
+    return available + ["DejaVu Sans"]
+
+
 # 中文字体设置
-plt.rcParams["font.sans-serif"] = ["SimHei", "WenQuanYi Micro Hei", "Noto Sans CJK SC", "DejaVu Sans"]
+plt.rcParams["font.sans-serif"] = _pick_font_family()
 plt.rcParams["axes.unicode_minus"] = False
 
 
@@ -38,6 +56,13 @@ def plot_nav_and_drawdown(daily: pd.DataFrame, trades: list) -> tuple[plt.Figure
         else:
             rebalance_navs.append(None)
 
+    legend_style = {
+        "loc": "lower center",
+        "bbox_to_anchor": (0.5, 1.02),
+        "ncol": 3,
+        "frameon": False,
+    }
+
     # ==========================================
     # 图 1: 净值曲线
     # ==========================================
@@ -58,8 +83,9 @@ def plot_nav_and_drawdown(daily: pd.DataFrame, trades: list) -> tuple[plt.Figure
 
     ax1.set_title("策略净值曲线", fontsize=14, fontweight="bold")
     ax1.set_ylabel("净值")
-    ax1.legend(loc="upper left")
+    ax1.legend(**legend_style)
     ax1.grid(True, alpha=0.3)
+    fig1.tight_layout(rect=(0, 0, 1, 0.95))
     fig1.autofmt_xdate()
 
     # ==========================================
@@ -80,12 +106,18 @@ def plot_nav_and_drawdown(daily: pd.DataFrame, trades: list) -> tuple[plt.Figure
         bm_dd = bm_nav / bm_cummax - 1
         ax2.plot(daily["date"], bm_dd, color="#7f8c8d", linewidth=0.8,
                  linestyle="--", alpha=0.7, label="基准回撤")
-        ax2.legend(loc="lower left")
+        ax2.legend(
+            loc="lower center",
+            bbox_to_anchor=(0.5, 1.02),
+            ncol=1,
+            frameon=False,
+        )
 
     ax2.set_title("回撤曲线", fontsize=14, fontweight="bold")
     ax2.set_ylabel("回撤幅度")
     ax2.yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1.0))
     ax2.grid(True, alpha=0.3)
+    fig2.tight_layout(rect=(0, 0, 1, 0.95))
     fig2.autofmt_xdate()
 
     return fig1, fig2
@@ -124,7 +156,8 @@ def plot_holdings_heatmap(holdings: pd.DataFrame) -> plt.Figure:
     df = holdings.copy()
     df["date"] = pd.to_datetime(df["date"])
     df["quarter"] = df["date"].dt.to_period("Q")
-    quarterly = df.groupby("quarter").last().reset_index(drop=True)
+    quarterly = df.groupby("quarter", as_index=False).last()
+    stock_name_map = dict(cfg.STOCK_POOL)
 
     # 取价格估算权重（直接用日线数据太重，这里用股数替代，改为比例热力图）
     stock_cols = [c for c in quarterly.columns if c not in ("date", "quarter")]
@@ -136,8 +169,7 @@ def plot_holdings_heatmap(holdings: pd.DataFrame) -> plt.Figure:
     ax.set_xticks(range(len(quarterly)))
     ax.set_xticklabels([str(q) for q in quarterly["quarter"]], rotation=45, ha="right", fontsize=8)
     ax.set_yticks(range(len(stock_cols)))
-    ax.set_yticklabels([cfg.STOCK_POOL[i][1] for i, c in enumerate(stock_cols)
-                        if c in stock_cols], fontsize=8)
+    ax.set_yticklabels([stock_name_map.get(code, code) for code in stock_cols], fontsize=8)
 
     ax.set_title("各股票持仓股数变化（季度末快照）", fontsize=14, fontweight="bold")
     fig.colorbar(im, ax=ax, label="持股数")
