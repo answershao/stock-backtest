@@ -8,7 +8,7 @@ from matplotlib import font_manager
 import numpy as np
 import pandas as pd
 
-from config import BacktestConfig
+from .config import BacktestConfig
 
 def _pick_font_family() -> list[str]:
     """优先选择本机已安装的中文字体，减少 glyph 缺失告警。"""

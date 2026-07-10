@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from config import BacktestConfig
+from .config import BacktestConfig
 
 
 def make_output_dir() -> Path:

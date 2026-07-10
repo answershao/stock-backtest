@@ -16,13 +16,17 @@ from pathlib import Path
 
 import pandas as pd
 
-from config import BacktestConfig
+from .config import BacktestConfig
 
 try:
     import tushare as ts
     from tushare.pro import client as _ts_client
 except ImportError as exc:
     raise ImportError("请先安装 tushare: pip install tushare") from exc
+
+
+DIVIDEND_COLUMNS = ["date", "cash_dividend", "bonus_ratio", "transfer_ratio"]
+QUOTE_COLUMNS = ["date", "open", "high", "low", "close", "volume", "amount", "turnover"]
 
 
 def _retry(func, *args, max_retries=3, base_delay=3, **kwargs):
@@ -82,6 +86,17 @@ def _get_pro_client(config: BacktestConfig):
     token = _require_token(config)
     ts.set_token(token)
     return ts.pro_api(token)
+
+
+def _ensure_pro_client(pro, config: BacktestConfig):
+    """按需初始化 Tushare Pro 客户端。"""
+    return pro if pro is not None else _get_pro_client(config)
+
+
+def _sleep_between_requests(index: int, low: float, high: float) -> None:
+    """在批量请求之间做轻量节流，降低限流概率。"""
+    if index > 0:
+        time.sleep(random.uniform(low, high))
 
 
 def _fetch_pro_bar_compatible(
@@ -195,6 +210,78 @@ def _write_cache(config: BacktestConfig, df: pd.DataFrame, path: Path) -> None:
     df.to_csv(path, index=False, encoding="utf-8-sig")
 
 
+def _load_cached_dataframe(
+    config: BacktestConfig,
+    cache_path: Path,
+    date_cols: list[str] | None,
+    cache_message: str,
+) -> tuple[pd.DataFrame | None, bool]:
+    """优先读缓存，缓存失效时再执行远端拉取。"""
+    cached = _read_cache(config, cache_path, date_cols)
+    if cached is not None:
+        print(cache_message.format(rows=len(cached)))
+        return cached, True
+    return None, False
+
+
+def _normalize_quote_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """标准化日线行情字段。"""
+    df = df.rename(
+        columns={
+            "trade_date": "date",
+            "vol": "volume",
+            "amount": "amount",
+        }
+    ).copy()
+    df["date"] = df["date"].apply(_normalize_trade_date)
+    if "turnover_rate" not in df.columns:
+        df["turnover_rate"] = pd.NA
+    df = df.rename(columns={"turnover_rate": "turnover"})
+    for col in QUOTE_COLUMNS:
+        if col not in df.columns:
+            df[col] = pd.NA
+    return df[QUOTE_COLUMNS].sort_values("date").reset_index(drop=True)
+
+
+def _empty_dividend_frame() -> pd.DataFrame:
+    """返回统一结构的空分红表。"""
+    return pd.DataFrame(columns=DIVIDEND_COLUMNS)
+
+
+def _normalize_dividend_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """标准化分红送配字段。"""
+    df = df.copy()
+    if "div_proc" in df.columns:
+        implemented_mask = df["div_proc"].astype(str).str.contains("实施|完成", na=False)
+        if implemented_mask.any():
+            df = df[implemented_mask]
+
+    ex_date_col = "ex_date" if "ex_date" in df.columns else "imp_ann_date"
+    df = df[df[ex_date_col].notna()].copy()
+    if df.empty:
+        return _empty_dividend_frame()
+
+    df["date"] = df[ex_date_col].apply(_normalize_trade_date)
+    df["bonus_ratio"] = pd.to_numeric(df.get("stk_bo_rate", 0.0), errors="coerce").fillna(0.0) / 10.0
+    df["transfer_ratio"] = pd.to_numeric(df.get("stk_co_rate", 0.0), errors="coerce").fillna(0.0) / 10.0
+    df["cash_dividend"] = pd.to_numeric(df.get("cash_div_tax", 0.0), errors="coerce").fillna(0.0) / 10.0
+    return df[DIVIDEND_COLUMNS].sort_values("date").reset_index(drop=True)
+
+
+def _normalize_trade_calendar_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """标准化交易日历字段。"""
+    df = df[df["is_open"] == 1].copy()
+    df["trade_date"] = df["cal_date"].apply(_normalize_trade_date)
+    return df[["trade_date"]].sort_values("trade_date").reset_index(drop=True)
+
+
+def _normalize_benchmark_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """标准化基准指数字段。"""
+    df = df.rename(columns={"trade_date": "date"}).copy()
+    df["date"] = df["date"].apply(_normalize_trade_date)
+    return df[["date", "close"]].sort_values("date").reset_index(drop=True)
+
+
 def fetch_daily_quotes(
     config: BacktestConfig,
     symbols: list[str],
@@ -219,36 +306,24 @@ def fetch_daily_quotes(
     for i, code in enumerate(symbols):
         try:
             cache_path = cache_dir / f"{code}_{start_fmt}_{end_fmt}_{adj_label}.csv"
-            cached = _read_cache(config, cache_path, ["date"])
-            if cached is not None:
+            cached, from_cache = _load_cached_dataframe(
+                config,
+                cache_path,
+                ["date"],
+                f"  ✓ {code} 日线数据读取缓存 ({{rows}} 条)",
+            )
+            if from_cache and cached is not None:
                 result[code] = cached
-                print(f"  ✓ {code} 日线数据读取缓存 ({len(cached)} 条)")
                 continue
-            if i > 0:
-                time.sleep(random.uniform(0.3, 0.8))
-            if pro is None:
-                pro = _get_pro_client(config)
+
+            _sleep_between_requests(i, 0.3, 0.8)
+            pro = _ensure_pro_client(pro, config)
             ts_code = _to_ts_code(code)
             df = _fetch_pro_bar_compatible(config, pro, ts_code, start_fmt, end_fmt)
             if df is None or df.empty:
                 print(f"  ⚠ {code} 无数据，跳过")
                 continue
-            df = df.rename(
-                columns={
-                    "trade_date": "date",
-                    "vol": "volume",
-                    "amount": "amount",
-                }
-            )
-            df["date"] = df["date"].apply(_normalize_trade_date)
-            if "turnover_rate" not in df.columns:
-                df["turnover_rate"] = pd.NA
-            df = df.rename(columns={"turnover_rate": "turnover"})
-            keep_cols = ["date", "open", "high", "low", "close", "volume", "amount", "turnover"]
-            for col in keep_cols:
-                if col not in df.columns:
-                    df[col] = pd.NA
-            df = df[keep_cols].sort_values("date").reset_index(drop=True)
+            df = _normalize_quote_frame(df)
             result[code] = df
             _write_cache(config, df, cache_path)
             print(f"  ✓ {code} 日线数据获取完成 ({len(df)} 条)")
@@ -268,7 +343,6 @@ def fetch_dividends(config: BacktestConfig, symbols: list[str]) -> dict[str, pd.
         date (除权除息日), cash_dividend (每股派息),
         bonus_ratio (送股比例), transfer_ratio (转增比例)
     """
-    empty = pd.DataFrame(columns=["date", "cash_dividend", "bonus_ratio", "transfer_ratio"])
     pro = None
     cache_dir = _cache_root(config) / "dividends"
 
@@ -276,54 +350,31 @@ def fetch_dividends(config: BacktestConfig, symbols: list[str]) -> dict[str, pd.
     for i, code in enumerate(symbols):
         try:
             cache_path = cache_dir / f"{code}.csv"
-            cached = _read_cache(config, cache_path, ["date"])
-            if cached is not None:
+            cached, from_cache = _load_cached_dataframe(
+                config,
+                cache_path,
+                ["date"],
+                f"  ✓ {code} 分红数据读取缓存 ({{rows}} 条)",
+            )
+            if from_cache and cached is not None:
                 result[code] = cached
-                print(f"  ✓ {code} 分红数据读取缓存 ({len(cached)} 条)")
                 continue
-            if i > 0:
-                time.sleep(random.uniform(0.2, 0.5))
-            if pro is None:
-                pro = _get_pro_client(config)
+
+            _sleep_between_requests(i, 0.2, 0.5)
+            pro = _ensure_pro_client(pro, config)
             ts_code = _to_ts_code(code)
             df = _retry(pro.dividend, ts_code=ts_code)
             if df is None or df.empty:
-                result[code] = empty.copy()
+                result[code] = _empty_dividend_frame()
                 _write_cache(config, result[code], cache_path)
                 continue
 
-            df = df.copy()
-            if "div_proc" in df.columns:
-                implemented_mask = df["div_proc"].astype(str).str.contains("实施|完成", na=False)
-                if implemented_mask.any():
-                    df = df[implemented_mask]
-
-            ex_date_col = "ex_date" if "ex_date" in df.columns else "imp_ann_date"
-            df = df[df[ex_date_col].notna()].copy()
-            if df.empty:
-                result[code] = empty.copy()
-                continue
-
-            df["date"] = df[ex_date_col].apply(_normalize_trade_date)
-
-            stk_bo_rate = pd.to_numeric(df.get("stk_bo_rate", 0.0), errors="coerce").fillna(0.0)
-            stk_co_rate = pd.to_numeric(df.get("stk_co_rate", 0.0), errors="coerce").fillna(0.0)
-            cash_div_tax = pd.to_numeric(df.get("cash_div_tax", 0.0), errors="coerce").fillna(0.0)
-
-            df["bonus_ratio"] = stk_bo_rate / 10.0
-            df["transfer_ratio"] = stk_co_rate / 10.0
-            df["cash_dividend"] = cash_div_tax / 10.0
-
-            result[code] = (
-                df[["date", "cash_dividend", "bonus_ratio", "transfer_ratio"]]
-                .sort_values("date")
-                .reset_index(drop=True)
-            )
+            result[code] = _normalize_dividend_frame(df)
             _write_cache(config, result[code], cache_path)
             print(f"  ✓ {code} 分红数据获取完成 ({len(result[code])} 条)")
         except Exception as e:
             print(f"  ⚠ {code} 分红数据获取失败: {e}，默认为无分红")
-            result[code] = empty.copy()
+            result[code] = _empty_dividend_frame()
 
     return result
 
@@ -336,24 +387,28 @@ def fetch_trade_calendar(config: BacktestConfig, start: str, end: str) -> set[da
     end_fmt = end.replace("-", "")
     cache_path = _cache_root(config) / "trade_calendar" / f"{start_fmt}_{end_fmt}.csv"
     try:
-        cached = _read_cache(config, cache_path, ["trade_date"])
-        if cached is not None:
-            trade_dates = set(cached["trade_date"])
-            print(f"  ✓ 交易日历读取缓存 ({len(trade_dates)} 个交易日)")
+        df, from_cache = _load_cached_dataframe(
+            config,
+            cache_path,
+            ["trade_date"],
+            "  ✓ 交易日历读取缓存 ({rows} 个交易日)",
+        )
+        if from_cache and df is not None:
+            trade_dates = set(df["trade_date"])
             return trade_dates
+
         pro = _get_pro_client(config)
-        df = _retry(
+        raw_df = _retry(
             pro.trade_cal,
             exchange="SSE",
             start_date=start_fmt,
             end_date=end_fmt,
         )
-        if df is None or df.empty:
+        if raw_df is None or raw_df.empty:
             raise RuntimeError("Tushare trade_cal 返回为空")
-        df = df[df["is_open"] == 1].copy()
-        df["trade_date"] = df["cal_date"].apply(_normalize_trade_date)
+        df = _normalize_trade_calendar_frame(raw_df)
         trade_dates = set(df["trade_date"])
-        _write_cache(config, df[["trade_date"]], cache_path)
+        _write_cache(config, df, cache_path)
         print(f"  ✓ 交易日历获取完成 ({len(trade_dates)} 个交易日)")
         return trade_dates
     except Exception as e:
@@ -374,23 +429,26 @@ def fetch_benchmark(
     end_fmt = end.replace("-", "")
     cache_path = _cache_root(config) / "benchmark" / f"{index_code}_{start_fmt}_{end_fmt}.csv"
     try:
-        cached = _read_cache(config, cache_path, ["date"])
-        if cached is not None:
-            print(f"  ✓ 基准指数 {index_code} 读取缓存 ({len(cached)} 条)")
-            return cached
+        df, from_cache = _load_cached_dataframe(
+            config,
+            cache_path,
+            ["date"],
+            f"  ✓ 基准指数 {index_code} 读取缓存 ({{rows}} 条)",
+        )
+        if from_cache and df is not None:
+            return df
+
         pro = _get_pro_client(config)
         ts_code = _to_ts_code(index_code.split(".")[0]) if "." not in index_code else index_code
-        df = _retry(
+        raw_df = _retry(
             pro.index_daily,
             ts_code=ts_code,
             start_date=start_fmt,
             end_date=end_fmt,
         )
-        if df is None or df.empty:
+        if raw_df is None or raw_df.empty:
             raise RuntimeError(f"指数 {index_code} 无数据")
-        df = df.rename(columns={"trade_date": "date"})
-        df["date"] = df["date"].apply(_normalize_trade_date)
-        df = df[["date", "close"]].sort_values("date").reset_index(drop=True)
+        df = _normalize_benchmark_frame(raw_df)
         _write_cache(config, df, cache_path)
         print(f"  ✓ 基准指数 {index_code} 获取完成 ({len(df)} 条)")
         return df
