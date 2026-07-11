@@ -7,7 +7,7 @@ import matplotlib.ticker as mticker
 import numpy as np
 import pandas as pd
 
-import config as cfg
+from stock_backtest.core import config as cfg
 
 # 中文字体设置
 plt.rcParams["font.sans-serif"] = ["SimHei", "WenQuanYi Micro Hei", "Noto Sans CJK SC", "DejaVu Sans"]
@@ -21,7 +21,7 @@ def plot_nav_and_drawdown(daily: pd.DataFrame, trades: list) -> tuple[plt.Figure
       2. 回撤曲线（策略 vs 基准）
     """
     daily = daily.copy()
-    daily["nav"] = daily["total_value"] / cfg.INITIAL_CAPITAL
+    daily["nav"] = daily["total_value"] / cfg.BACKTEST.initial_capital
 
     has_bm = daily["benchmark_close"].notna().any()
     if has_bm:
@@ -136,8 +136,7 @@ def plot_holdings_heatmap(holdings: pd.DataFrame) -> plt.Figure:
     ax.set_xticks(range(len(quarterly)))
     ax.set_xticklabels([str(q) for q in quarterly["quarter"]], rotation=45, ha="right", fontsize=8)
     ax.set_yticks(range(len(stock_cols)))
-    ax.set_yticklabels([cfg.STOCK_POOL[i][1] for i, c in enumerate(stock_cols)
-                        if c in stock_cols], fontsize=8)
+    ax.set_yticklabels([cfg.UNIVERSE.stock_name_map.get(code, code) for code in stock_cols], fontsize=8)
 
     ax.set_title("各股票持仓股数变化（季度末快照）", fontsize=14, fontweight="bold")
     fig.colorbar(im, ax=ax, label="持股数")

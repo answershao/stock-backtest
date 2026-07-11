@@ -5,7 +5,7 @@
 import numpy as np
 import pandas as pd
 
-import config as cfg
+from stock_backtest.core import config as cfg
 
 
 def compute_metrics(daily: pd.DataFrame, trades: list) -> dict:
@@ -20,7 +20,7 @@ def compute_metrics(daily: pd.DataFrame, trades: list) -> dict:
     total_days = len(daily)
 
     # ---- 日收益率 ----
-    daily["nav"] = daily["total_value"] / cfg.INITIAL_CAPITAL
+    daily["nav"] = daily["total_value"] / cfg.BACKTEST.initial_capital
     daily["daily_return"] = daily["nav"].pct_change()
 
     # ---- 基准 ----
@@ -51,7 +51,7 @@ def compute_metrics(daily: pd.DataFrame, trades: list) -> dict:
     max_drawdown = drawdown.min()
 
     # ---- 夏普比率 ----
-    excess = daily.loc[valid, "daily_return"] - cfg.RISK_FREE_RATE / 252
+    excess = daily.loc[valid, "daily_return"] - cfg.BACKTEST.risk_free_rate / 252
     sharpe = (excess.mean() / daily_vol * np.sqrt(252)) if daily_vol > 0 else 0.0
 
     # ---- 卡玛比率 ----
@@ -158,7 +158,7 @@ def metrics_report(metrics: dict) -> str:
     lines.append(f"    调仓次数:        {metrics['调仓次数']}")
     lines.append("")
     lines.append("  【概览】")
-    lines.append(f"    最终净值:        ¥{metrics['最终净值'] * cfg.INITIAL_CAPITAL:,.0f}")
+    lines.append(f"    最终净值:        ¥{metrics['最终净值'] * cfg.BACKTEST.initial_capital:,.0f}")
     lines.append(f"    回测年数:        {metrics['回测年数']:.1f} 年")
     lines.append("")
     lines.append("=" * 52)
@@ -169,7 +169,7 @@ def annual_returns(daily: pd.DataFrame) -> pd.DataFrame:
     """计算逐年收益率"""
     daily = daily.copy()
     daily["year"] = pd.to_datetime(daily["date"]).dt.year
-    daily["nav"] = daily["total_value"] / cfg.INITIAL_CAPITAL
+    daily["nav"] = daily["total_value"] / cfg.BACKTEST.initial_capital
 
     result = []
     for yr, grp in daily.groupby("year"):
