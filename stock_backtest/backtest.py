@@ -13,7 +13,7 @@ from stock_backtest import config as cfg
 from stock_backtest.data import build_market_context
 from stock_backtest.factors import build_factor_snapshot
 from stock_backtest.models import BacktestInputs, BacktestResult, DailyRecord, PortfolioState, Trade
-from stock_backtest.strategy import generate_target_weights
+from stock_backtest.strategy import build_value_portfolio_targets
 
 
 def round_shares(value: float) -> int:
@@ -147,13 +147,13 @@ def _apply_dividends_for_day(executor: PortfolioExecutor, dividend_map: dict, ca
             executor.apply_dividend(trade_date, code, event)
 
 
-def _run_research_rebalance(executor, market, fundamentals, trade_date, rebalance_logs) -> None:
+def _run_value_portfolio_rebalance(executor, market, fundamentals, trade_date, rebalance_logs) -> None:
     if fundamentals is None or fundamentals.empty:
-        raise ValueError("research_quant 模式需要 fundamentals 数据。")
+        raise ValueError("value_portfolio 模式需要 fundamentals 数据。")
 
     current_codes = {code for code, held in executor.state.shares.items() if held > 0}
     snapshot = build_factor_snapshot(fundamentals, trade_date, market.candidate_codes)
-    target_weights, signal_table, signal_logs = generate_target_weights(snapshot, trade_date, current_codes)
+    target_weights, signal_table, signal_logs = build_value_portfolio_targets(snapshot, trade_date, current_codes)
     rebalance_logs.append(signal_logs)
 
     portfolio_value = executor.portfolio_value(trade_date)
@@ -162,11 +162,11 @@ def _run_research_rebalance(executor, market, fundamentals, trade_date, rebalanc
         if held_shares <= 0:
             continue
         target_weight = target_weights.get(code, 0.0)
-        reason = "研究版调仓卖出"
+        reason = "价值组合调仓卖出"
         if code not in target_weights:
-            reason = "研究版清仓"
+            reason = "价值组合清仓"
         elif target_weight < cfg.STRATEGY.target_weight:
-            reason = "研究版减仓"
+            reason = "价值组合减仓"
         executor.sell_to_target(trade_date, code, target_weight, portfolio_value, reason)
 
     buy_order = []
@@ -177,20 +177,20 @@ def _run_research_rebalance(executor, market, fundamentals, trade_date, rebalanc
     buy_order.sort(key=lambda item: (item[2], item[0]), reverse=True)
 
     for code, target_weight, _ in buy_order:
-        reason = "研究版新开仓" if executor.state.shares.get(code, 0) == 0 else "研究版再平衡买入"
+        reason = "价值组合新开仓" if executor.state.shares.get(code, 0) == 0 else "价值组合再平衡买入"
         executor.buy_to_target(trade_date, code, target_weight, portfolio_value, reason)
 
 
-def _run_static_rebalance(executor, market, trade_date) -> None:
+def _run_equal_weight_pool_rebalance(executor, market, trade_date) -> None:
     portfolio_value = executor.portfolio_value(trade_date)
     target_weights = {code: cfg.STRATEGY.target_weight for code in market.candidate_codes}
 
     for code, held_shares in list(executor.state.shares.items()):
         if held_shares > 0:
-            executor.sell_to_target(trade_date, code, target_weights.get(code, 0.0), portfolio_value, "静态等权卖出")
+            executor.sell_to_target(trade_date, code, target_weights.get(code, 0.0), portfolio_value, "股票池等权卖出")
 
     for code, target_weight in target_weights.items():
-        executor.buy_to_target(trade_date, code, target_weight, portfolio_value, "静态等权买入")
+        executor.buy_to_target(trade_date, code, target_weight, portfolio_value, "股票池等权买入")
 
 
 def _record_daily_state(executor, market, trade_date, daily_records, holdings_records) -> None:
@@ -249,10 +249,10 @@ def run_backtest_result(inputs: BacktestInputs) -> BacktestResult:
         _apply_dividends_for_day(executor, market.dividend_map, market.candidate_codes, trade_date)
 
         if trade_date in rebalance_set:
-            if cfg.SYSTEM.strategy_mode == "research_quant":
-                _run_research_rebalance(executor, market, inputs.fundamentals, trade_date, rebalance_logs)
+            if cfg.is_value_portfolio_mode():
+                _run_value_portfolio_rebalance(executor, market, inputs.fundamentals, trade_date, rebalance_logs)
             else:
-                _run_static_rebalance(executor, market, trade_date)
+                _run_equal_weight_pool_rebalance(executor, market, trade_date)
 
         _record_daily_state(executor, market, trade_date, daily_records, holdings_records)
 

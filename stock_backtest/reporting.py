@@ -18,6 +18,59 @@ plt.rcParams["font.sans-serif"] = ["SimHei", "WenQuanYi Micro Hei", "Noto Sans C
 plt.rcParams["axes.unicode_minus"] = False
 
 
+def strategy_report() -> str:
+    mode_labels = {
+        "value_portfolio": "价值组合",
+        "equal_weight_pool": "股票池等权",
+    }
+    pool_names = [name for _, name, _ in cfg.UNIVERSE.stock_pool]
+    industry_set = sorted({industry for _, _, industry in cfg.UNIVERSE.stock_pool if industry})
+    lines = []
+    lines.append("=" * 52)
+    lines.append(f"{'策略运行看板':^48}")
+    lines.append("=" * 52)
+    lines.append("")
+    lines.append("  【策略】")
+    lines.append(f"    模式:            {mode_labels.get(cfg.SYSTEM.strategy_mode, cfg.SYSTEM.strategy_mode)}")
+    lines.append(f"    候选池来源:      {cfg.UNIVERSE.candidate_pool_mode}")
+    lines.append(f"    默认仓位方式:    等权/半等权")
+    lines.append("")
+    lines.append("  【回测】")
+    lines.append(f"    起始日期:        {cfg.BACKTEST.start_date}")
+    lines.append(f"    结束日期:        {cfg.BACKTEST.end_date}")
+    lines.append(f"    初始资金:        ¥{cfg.BACKTEST.initial_capital:,.0f}")
+    lines.append(f"    调仓计划:        {', '.join(cfg.BACKTEST.rebalance_schedule)}")
+    lines.append(f"    基准指数:        {cfg.BACKTEST.benchmark_index}")
+    lines.append("")
+    lines.append("  【股票池】")
+    lines.append(f"    白名单数量:      {len(cfg.UNIVERSE.stock_pool)}")
+    lines.append(f"    行业数量:        {len(industry_set)}")
+    lines.append(f"    持仓上限:        {cfg.STRATEGY.max_positions}")
+    lines.append(f"    单股目标仓位:    {cfg.STRATEGY.target_weight * 100:.2f}%")
+    lines.append(f"    单股仓位上限:    {cfg.STRATEGY.max_single_weight * 100:.2f}%")
+    lines.append(f"    单行业持股上限:  {cfg.STRATEGY.max_positions_per_industry}")
+    lines.append("")
+    lines.append("  【规则】")
+    lines.append(f"    买入增速阈值:    g > {cfg.STRATEGY.g_buy_threshold * 100:.2f}%")
+    lines.append(f"    卖出增速阈值:    g < {cfg.STRATEGY.g_sell_threshold * 100:.2f}%")
+    lines.append(f"    买入 PEG 阈值:   < {cfg.STRATEGY.peg_buy_threshold:.2f}")
+    lines.append(f"    减仓 PEG 阈值:   >= {cfg.STRATEGY.peg_trim_threshold:.2f}")
+    lines.append(f"    ROE 阈值:        >= {cfg.STRATEGY.roe_threshold * 100:.2f}%")
+    lines.append(f"    换股分差阈值:    >= {cfg.STRATEGY.switch_score_gap:.2f}")
+    lines.append("")
+    lines.append("  【数据】")
+    lines.append(f"    基本面文件:      {cfg.DATA_SOURCE.fundamental_data_path}")
+    lines.append(f"    Tushare 限速:    {cfg.DATA_SOURCE.tushare_rate_limit_seconds:.2f}s")
+    lines.append("")
+    lines.append("  【白名单预览】")
+    lines.append(f"    {', '.join(pool_names[:10])}")
+    if len(pool_names) > 10:
+        lines.append(f"    ... 共 {len(pool_names)} 只")
+    lines.append("")
+    lines.append("=" * 52)
+    return "\n".join(lines)
+
+
 def compute_metrics(daily: pd.DataFrame, trades: list) -> dict:
     daily = daily.copy()
     total_days = len(daily)
@@ -189,6 +242,44 @@ def export_backtest_result(result: BacktestResult, output_dir: Path) -> None:
         for trade in result.trades
     ]
     pd.DataFrame(trade_rows).to_csv(output_dir / "trades.csv", index=False)
+
+
+def plot_total_position_value(daily: pd.DataFrame) -> plt.Figure:
+    df = daily.copy()
+    df["date"] = pd.to_datetime(df["date"])
+
+    fig, ax = plt.subplots(figsize=(14, 6))
+    ax.plot(df["date"], df["equity_value"], color="#0b6e4f", linewidth=1.4, label="总仓位市值")
+
+    if "total_value" in df.columns and "cash" in df.columns:
+        ax.plot(
+            df["date"],
+            df["total_value"],
+            color="#1f4e79",
+            linewidth=1.0,
+            linestyle="--",
+            alpha=0.75,
+            label="账户总资产",
+        )
+        ax.fill_between(df["date"], 0, df["cash"], color="#d4e6f1", alpha=0.25, label="现金")
+
+    ax.set_title("总仓位市值变化图", fontsize=14, fontweight="bold")
+    ax.set_ylabel("市值 (元)")
+    ax.yaxis.set_major_formatter(mticker.StrMethodFormatter("{x:,.0f}"))
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="upper left")
+    fig.autofmt_xdate()
+    fig.tight_layout()
+    return fig
+
+
+def save_total_position_value_plot(daily: pd.DataFrame, output_dir: Path) -> Path:
+    output_dir.mkdir(exist_ok=True)
+    fig = plot_total_position_value(daily)
+    output_path = output_dir / "total_position_value.png"
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return output_path
 
 
 def plot_nav_and_drawdown(daily: pd.DataFrame, trades: list) -> tuple[plt.Figure, plt.Figure]:

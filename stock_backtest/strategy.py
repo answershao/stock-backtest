@@ -1,5 +1,17 @@
 """
-研究版回测策略规则、选股与目标权重生成。
+价值组合策略规则、组合内进出与目标仓位生成。
+
+代码分层与文档思想对应关系：
+1. entry_rule
+   低估、成长、质量达标后才允许新建仓
+2. hold_rule
+   当前持仓只要逻辑未坏、估值未透支，就继续留在组合
+3. exit_rule
+   基本面恶化或估值过高时退出
+4. switch_rule
+   仅当出现明显更优标的时才换股补位
+5. weight_rule
+   最终对保留/新进组合执行等权或半等权落地
 """
 
 from __future__ import annotations
@@ -44,6 +56,7 @@ def base_exclusion_rule(data):
     )
 
 
+# exit_rule: 基本面或估值明显恶化，触发退出。
 def sell_rule(data):
     return (
         data["g"].isna()
@@ -54,6 +67,7 @@ def sell_rule(data):
     )
 
 
+# hold_rule: 逻辑仍在但估值偏高，先减仓而非直接清仓。
 def trim_rule(data):
     return (
         ~data["sell_flag"]
@@ -64,6 +78,7 @@ def trim_rule(data):
     )
 
 
+# entry_rule: 只有低估、成长、质量都达标时才允许新建仓。
 def buy_rule(data):
     return (
         ~data["base_excluded"]
@@ -130,6 +145,7 @@ def select_full_position_codes(current_full, trimmed_codes):
     return selected_full
 
 
+# switch_rule: 只有替代标的分数优势足够明显时才允许换股。
 def apply_switch_rule(selected_full, trimmed_codes, available_new, signal_table):
     current_pool = signal_table.set_index("code")
     while available_new and selected_full:
@@ -163,6 +179,7 @@ def fill_new_positions(selected_full, trimmed_codes, available_new, signal_table
     return selected_full
 
 
+# weight_rule: 保留仓位执行半等权，新开/保留完整仓位执行等权。
 def build_target_weights(trimmed_codes, selected_full):
     target_weights = {}
     for code in trimmed_codes:
@@ -222,7 +239,7 @@ def prepare_signal_table(snapshot, as_of, current_codes):
     return build_signal_table(snapshot, as_of, current_codes)
 
 
-def generate_target_weights(snapshot, as_of, current_codes):
+def build_value_portfolio_targets(snapshot, as_of, current_codes):
     signal_table = prepare_signal_table(snapshot, as_of, current_codes)
     if signal_table.empty:
         return {}, signal_table, pd.DataFrame(
