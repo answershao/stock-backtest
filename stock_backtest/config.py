@@ -8,7 +8,6 @@
 - STRATEGY
 - DATA_SOURCE
 - COSTS
-
 """
 
 from __future__ import annotations

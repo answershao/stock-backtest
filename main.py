@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from stock_backtest.app.app_runner import run_application
+from stock_backtest.app import run_application
 
 
 def main():

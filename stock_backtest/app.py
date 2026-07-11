@@ -12,10 +12,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from stock_backtest.data.loader import load_backtest_inputs
-from stock_backtest.engine.backtest import run_backtest_result
-from stock_backtest.reporting.metrics import compute_metrics, metrics_report
-from stock_backtest.reporting.reporting import export_backtest_result
+from stock_backtest.backtest import run_backtest_result
+from stock_backtest.data import load_backtest_inputs
+from stock_backtest.reporting import compute_metrics, export_backtest_result, metrics_report
 
 
 def run_application(output_dir=Path("outputs")):

@@ -1,63 +1,56 @@
 """
-评价指标计算模块
+结果指标、导出与可视化。
 """
 
+from __future__ import annotations
+
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 import numpy as np
 import pandas as pd
 
-from stock_backtest.core import config as cfg
+from stock_backtest import config as cfg
+from stock_backtest.models import BacktestResult
+
+plt.rcParams["font.sans-serif"] = ["SimHei", "WenQuanYi Micro Hei", "Noto Sans CJK SC", "DejaVu Sans"]
+plt.rcParams["axes.unicode_minus"] = False
 
 
 def compute_metrics(daily: pd.DataFrame, trades: list) -> dict:
-    """
-    根据每日净值序列和交易记录，计算全部评价指标。
-
-    返回
-    ----
-    dict    指标名 → 数值（百分比已转为小数形式，展示时 ×100）
-    """
     daily = daily.copy()
     total_days = len(daily)
 
-    # ---- 日收益率 ----
     daily["nav"] = daily["total_value"] / cfg.BACKTEST.initial_capital
     daily["daily_return"] = daily["nav"].pct_change()
 
-    # ---- 基准 ----
     has_benchmark = daily["benchmark_close"].notna().any()
     if has_benchmark:
         init_bm = daily["benchmark_close"].dropna().iloc[0]
         daily["bm_nav"] = daily["benchmark_close"] / init_bm
         daily["bm_return"] = daily["bm_nav"].pct_change()
 
-    # 过滤掉无日收益的行
     valid = daily["daily_return"].notna()
 
-    # ---- 累计收益率 ----
     final_nav = daily["nav"].iloc[-1]
     cumulative_return = final_nav - 1.0
 
-    # ---- 年化收益率 ----
     years = total_days / 252
     annualized_return = (final_nav ** (1 / years)) - 1 if years > 0 else 0.0
 
-    # ---- 年化波动率 ----
     daily_vol = daily.loc[valid, "daily_return"].std()
     annualized_vol = daily_vol * np.sqrt(252)
 
-    # ---- 最大回撤 ----
     cummax = daily["nav"].cummax()
     drawdown = daily["nav"] / cummax - 1
     max_drawdown = drawdown.min()
 
-    # ---- 夏普比率 ----
     excess = daily.loc[valid, "daily_return"] - cfg.BACKTEST.risk_free_rate / 252
     sharpe = (excess.mean() / daily_vol * np.sqrt(252)) if daily_vol > 0 else 0.0
 
-    # ---- 卡玛比率 ----
     calmar = annualized_return / abs(max_drawdown) if max_drawdown != 0 else 0.0
 
-    # ---- 超额收益 vs 基准 ----
     excess_return = None
     if has_benchmark:
         final_bm_nav = daily["bm_nav"].iloc[-1]
@@ -74,19 +67,15 @@ def compute_metrics(daily: pd.DataFrame, trades: list) -> dict:
     else:
         bm_cumulative = bm_annualized = bm_max_drawdown = bm_annualized_vol = None
 
-    # ---- 交易成本合计 ----
     total_commission = sum(t.commission for t in trades)
     total_stamp_tax = sum(t.stamp_tax for t in trades)
     total_transfer_fee = sum(t.transfer_fee for t in trades)
     total_cost = total_commission + total_stamp_tax + total_transfer_fee
 
-    # ---- 年化换手率 ----
-    # 换手率 = 调仓总成交额 / 期间平均净值（单边）
     total_turnover = sum(t.amount for t in trades)
     avg_nav = daily["total_value"].mean()
     annual_turnover = (total_turnover / avg_nav) / years if years > 0 else 0.0
 
-    # ---- 调仓统计 ----
     rebalance_dates = set(t.date for t in trades)
     rebalance_count = len(rebalance_dates)
 
@@ -98,12 +87,10 @@ def compute_metrics(daily: pd.DataFrame, trades: list) -> dict:
         "夏普比率": sharpe,
         "卡玛比率": calmar,
         "超额收益(年化)": excess_return,
-        # 基准
         "基准累计收益率": bm_cumulative,
         "基准年化收益率": bm_annualized,
         "基准最大回撤": bm_max_drawdown,
         "基准年化波动率": bm_annualized_vol,
-        # 交易
         "总交易成本": total_cost,
         "总佣金": total_commission,
         "总印花税": total_stamp_tax,
@@ -117,7 +104,6 @@ def compute_metrics(daily: pd.DataFrame, trades: list) -> dict:
 
 
 def metrics_report(metrics: dict) -> str:
-    """生成评价指标文字报告"""
     def pct(v):
         if v is None:
             return "N/A"
@@ -166,7 +152,6 @@ def metrics_report(metrics: dict) -> str:
 
 
 def annual_returns(daily: pd.DataFrame) -> pd.DataFrame:
-    """计算逐年收益率"""
     daily = daily.copy()
     daily["year"] = pd.to_datetime(daily["date"]).dt.year
     daily["nav"] = daily["total_value"] / cfg.BACKTEST.initial_capital
@@ -179,3 +164,135 @@ def annual_returns(daily: pd.DataFrame) -> pd.DataFrame:
         result.append({"年份": yr, "收益率": ret})
 
     return pd.DataFrame(result)
+
+
+def export_backtest_result(result: BacktestResult, output_dir: Path) -> None:
+    output_dir.mkdir(exist_ok=True)
+    result.daily.to_csv(output_dir / "daily.csv", index=False)
+    result.holdings.to_csv(output_dir / "holdings.csv", index=False)
+    result.rebalance_logs.to_csv(output_dir / "rebalance_logs.csv", index=False)
+
+    trade_rows = [
+        {
+            "date": trade.date,
+            "code": trade.code,
+            "name": trade.name,
+            "action": trade.action,
+            "price": trade.price,
+            "shares": trade.shares,
+            "amount": trade.amount,
+            "commission": trade.commission,
+            "stamp_tax": trade.stamp_tax,
+            "transfer_fee": trade.transfer_fee,
+            "reason": trade.reason,
+        }
+        for trade in result.trades
+    ]
+    pd.DataFrame(trade_rows).to_csv(output_dir / "trades.csv", index=False)
+
+
+def plot_nav_and_drawdown(daily: pd.DataFrame, trades: list) -> tuple[plt.Figure, plt.Figure]:
+    daily = daily.copy()
+    daily["nav"] = daily["total_value"] / cfg.BACKTEST.initial_capital
+
+    has_bm = daily["benchmark_close"].notna().any()
+    if has_bm:
+        init_bm = daily["benchmark_close"].dropna().iloc[0]
+        daily["bm_nav"] = daily["benchmark_close"] / init_bm
+
+    rebalance_dates = sorted(set(t.date for t in trades))
+    rebalance_navs = []
+    for d in rebalance_dates:
+        row = daily[daily["date"] == d]
+        rebalance_navs.append(row["nav"].iloc[0] if not row.empty else None)
+
+    fig1, ax1 = plt.subplots(figsize=(14, 6))
+
+    ax1.plot(daily["date"], daily["nav"], color="#1a5276", linewidth=1.2, label="策略净值")
+    if has_bm:
+        ax1.plot(
+            daily["date"],
+            daily["bm_nav"],
+            color="#b03a2e",
+            linewidth=1.0,
+            linestyle="--",
+            alpha=0.8,
+            label="基准净值",
+        )
+
+    valid_rd = [d for d, v in zip(rebalance_dates, rebalance_navs) if v is not None]
+    valid_rn = [v for v in rebalance_navs if v is not None]
+    ax1.scatter(valid_rd, valid_rn, color="#e67e22", s=18, zorder=5, label="调仓日")
+    ax1.axhline(y=1.0, color="gray", linestyle=":", alpha=0.5)
+    ax1.set_title("策略净值曲线", fontsize=14, fontweight="bold")
+    ax1.set_ylabel("净值")
+    ax1.legend(loc="upper left")
+    ax1.grid(True, alpha=0.3)
+    fig1.autofmt_xdate()
+
+    nav = daily["nav"].values
+    cummax = np.maximum.accumulate(nav)
+    dd = nav / cummax - 1
+
+    fig2, ax2 = plt.subplots(figsize=(14, 4))
+    ax2.fill_between(daily["date"], 0, dd, color="#c0392b", alpha=0.35)
+    ax2.plot(daily["date"], dd, color="#c0392b", linewidth=0.8)
+
+    if has_bm:
+        bm_nav = daily["bm_nav"].values
+        bm_cummax = np.maximum.accumulate(bm_nav)
+        bm_dd = bm_nav / bm_cummax - 1
+        ax2.plot(daily["date"], bm_dd, color="#7f8c8d", linewidth=0.8, linestyle="--", alpha=0.7, label="基准回撤")
+        ax2.legend(loc="lower left")
+
+    ax2.set_title("回撤曲线", fontsize=14, fontweight="bold")
+    ax2.set_ylabel("回撤幅度")
+    ax2.yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1.0))
+    ax2.grid(True, alpha=0.3)
+    fig2.autofmt_xdate()
+
+    return fig1, fig2
+
+
+def plot_annual_returns(annual_df: pd.DataFrame) -> plt.Figure:
+    fig, ax = plt.subplots(figsize=(10, 5))
+
+    colors = ["#27ae60" if r >= 0 else "#e74c3c" for r in annual_df["收益率"]]
+    years = annual_df["年份"].astype(str)
+    pct_values = annual_df["收益率"] * 100
+
+    ax.bar(years, pct_values, color=colors, edgecolor="white", linewidth=0.5)
+
+    for x, v in enumerate(pct_values):
+        offset = 0.3 if v >= 0 else -1.0
+        ax.text(x, v + offset, f"{v:.1f}%", ha="center", fontsize=9)
+
+    ax.axhline(y=0, color="gray", linewidth=0.8)
+    ax.set_title("年度收益率", fontsize=14, fontweight="bold")
+    ax.set_ylabel("收益率 (%)")
+    ax.grid(axis="y", alpha=0.3)
+    fig.autofmt_xdate()
+
+    return fig
+
+
+def plot_holdings_heatmap(holdings: pd.DataFrame) -> plt.Figure:
+    df = holdings.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["quarter"] = df["date"].dt.to_period("Q")
+    quarterly = df.groupby("quarter").last().reset_index(drop=True)
+
+    stock_cols = [c for c in quarterly.columns if c not in ("date", "quarter")]
+    data = quarterly[stock_cols].T.values
+
+    fig, ax = plt.subplots(figsize=(16, 10))
+    im = ax.imshow(data, aspect="auto", cmap="YlOrRd")
+
+    ax.set_xticks(range(len(quarterly)))
+    ax.set_xticklabels([str(q) for q in quarterly["quarter"]], rotation=45, ha="right", fontsize=8)
+    ax.set_yticks(range(len(stock_cols)))
+    ax.set_yticklabels([cfg.UNIVERSE.stock_name_map.get(code, code) for code in stock_cols], fontsize=8)
+
+    ax.set_title("各股票持仓股数变化（季度末快照）", fontsize=14, fontweight="bold")
+    fig.colorbar(im, ax=ax, label="持股数")
+    return fig
