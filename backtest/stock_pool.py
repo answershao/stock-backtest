@@ -22,6 +22,19 @@ def load_stock_pool_file(path: str | Path) -> list[str]:
     return stock_pool
 
 
+def load_stock_name_map(path: str | Path) -> dict[str, str]:
+    data = pd.read_csv(path)
+    if "ts_code" not in data.columns or "name" not in data.columns:
+        return {}
+    subset = data[["ts_code", "name"]].dropna()
+    if subset.empty:
+        return {}
+    subset["ts_code"] = subset["ts_code"].astype(str).str.strip()
+    subset["name"] = subset["name"].astype(str).str.strip()
+    subset = subset[(subset["ts_code"] != "") & (subset["name"] != "")]
+    return dict(zip(subset["ts_code"], subset["name"]))
+
+
 def resolve_stock_pool(args: Any) -> list[str]:
     if getattr(args, "stock_pool_file", None):
         return load_stock_pool_file(args.stock_pool_file)

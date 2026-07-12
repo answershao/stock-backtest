@@ -99,6 +99,52 @@ class ExpectedReturnStrategyBacktestTest(unittest.TestCase):
         may_holdings = result.holdings_history[result.holdings_history["date"] == pd.Timestamp("2024-05-02")]
         self.assertIn("AAA", may_holdings["code"].tolist())
 
+    def test_adds_dividend_cash_and_rebalances_on_total_equity(self) -> None:
+        price_df = pd.DataFrame(
+            [
+                {"date": "2024-01-02", "code": "AAA", "close": 10.0},
+                {"date": "2024-01-02", "code": "BBB", "close": 10.0},
+                {"date": "2024-05-02", "code": "AAA", "close": 10.0},
+                {"date": "2024-05-02", "code": "BBB", "close": 10.0},
+            ]
+        )
+        signal_df = pd.DataFrame(
+            [
+                {"date": "2024-01-02", "code": "AAA", "expected_return_3y": 0.30},
+                {"date": "2024-05-02", "code": "AAA", "expected_return_3y": 0.30},
+                {"date": "2024-05-02", "code": "BBB", "expected_return_3y": 0.25},
+            ]
+        )
+        dividend_df = pd.DataFrame(
+            [
+                {"date": "2024-05-02", "code": "AAA", "cash_div": 1.0},
+            ]
+        )
+
+        result = run_expected_return_strategy(
+            price_df=price_df,
+            signal_df=signal_df,
+            dividend_df=dividend_df,
+            start_date="2024-01-02",
+            end_date="2024-05-02",
+            config=StrategyConfig(
+                initial_cash=1000.0,
+                max_positions=2,
+                target_weight=0.5,
+                rebalance_month_days=("05-01",),
+            ),
+        )
+
+        final_row = result.portfolio_history.iloc[-1]
+        self.assertAlmostEqual(final_row["dividend_cash"], 50.0)
+        self.assertAlmostEqual(final_row["equity"], 1050.0)
+        self.assertAlmostEqual(final_row["cash"], 0.0)
+
+        may_holdings = result.holdings_history[result.holdings_history["date"] == pd.Timestamp("2024-05-02")]
+        weights = dict(zip(may_holdings["code"], may_holdings["weight"]))
+        self.assertAlmostEqual(weights["AAA"], 0.5)
+        self.assertAlmostEqual(weights["BBB"], 0.5)
+
 
 if __name__ == "__main__":
     unittest.main()

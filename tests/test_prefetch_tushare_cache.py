@@ -42,6 +42,7 @@ class PrefetchTushareCacheTest(unittest.TestCase):
             def __init__(self) -> None:
                 self.trade_cal_args = []
                 self.daily_args = []
+                self.dividend_args = []
 
             def trade_cal(self, **kwargs) -> pd.DataFrame:
                 self.trade_cal_args.append(kwargs)
@@ -96,6 +97,14 @@ class PrefetchTushareCacheTest(unittest.TestCase):
                     ]
                 )
 
+            def dividend(self, **kwargs) -> pd.DataFrame:
+                self.dividend_args.append(kwargs)
+                return pd.DataFrame(
+                    [
+                        {"ts_code": "600519.SH", "ex_date": "20240502", "cash_div": 1.5, "div_proc": "实施"},
+                    ]
+                )
+
         with tempfile.TemporaryDirectory() as tmpdir:
             cache_dir = Path(tmpdir)
             pro = FakePro()
@@ -114,6 +123,7 @@ class PrefetchTushareCacheTest(unittest.TestCase):
             self.assertTrue((cache_dir / "daily_basic").exists())
             self.assertTrue((cache_dir / "report_rc").exists())
             self.assertTrue((cache_dir / "fina_indicator").exists())
+            self.assertTrue((cache_dir / "dividend").exists())
 
     def test_prefetch_updates_cache_incrementally_without_clearing(self) -> None:
         class FakePro:
@@ -121,8 +131,16 @@ class PrefetchTushareCacheTest(unittest.TestCase):
                 self.trade_cal_args = []
                 self.daily_args = []
                 self.daily_basic_args = []
+                self.dividend_args = []
+                self.dividend_args = []
+                self.dividend_args = []
+                self.dividend_args = []
+                self.dividend_args = []
+                self.dividend_args = []
+                self.dividend_args = []
                 self.report_rc_args = []
                 self.fina_indicator_args = []
+                self.dividend_args = []
 
             def trade_cal(self, **kwargs) -> pd.DataFrame:
                 self.trade_cal_args.append(kwargs)
@@ -182,6 +200,17 @@ class PrefetchTushareCacheTest(unittest.TestCase):
                     rows.append({"ann_date": "20240103", "end_date": "20231231", "eps": 10.5})
                 return pd.DataFrame(rows)
 
+            def dividend(self, **kwargs) -> pd.DataFrame:
+                self.dividend_args.append(kwargs)
+                start_date = kwargs["start_date"]
+                end_date = kwargs["end_date"]
+                rows = []
+                if start_date <= "20240102" <= end_date:
+                    rows.append({"ts_code": "600519.SH", "ex_date": "20240102", "cash_div": 1.0, "div_proc": "实施"})
+                if start_date <= "20240103" <= end_date:
+                    rows.append({"ts_code": "600519.SH", "ex_date": "20240103", "cash_div": 1.2, "div_proc": "实施"})
+                return pd.DataFrame(rows)
+
         with tempfile.TemporaryDirectory() as tmpdir:
             cache_dir = Path(tmpdir)
             marker = cache_dir / "keep.txt"
@@ -226,6 +255,10 @@ class PrefetchTushareCacheTest(unittest.TestCase):
                 [FULL_HISTORY_START_DATE, "20240103"],
             )
             self.assertEqual(
+                [args["start_date"] for args in pro.dividend_args],
+                [FULL_HISTORY_START_DATE, "20240103"],
+            )
+            self.assertEqual(
                 [args["start_date"] for args in pro.report_rc_args if args.get("offset", 0) == 0],
                 [FULL_HISTORY_START_DATE, "20240103", FULL_HISTORY_START_DATE],
             )
@@ -241,6 +274,7 @@ class PrefetchTushareCacheTest(unittest.TestCase):
                 self.trade_cal_args = []
                 self.daily_args = []
                 self.daily_basic_args = []
+                self.dividend_args = []
 
             def trade_cal(self, **kwargs) -> pd.DataFrame:
                 self.trade_cal_args.append(kwargs)
@@ -273,6 +307,10 @@ class PrefetchTushareCacheTest(unittest.TestCase):
             def fina_indicator(self, **kwargs) -> pd.DataFrame:
                 return pd.DataFrame()
 
+            def dividend(self, **kwargs) -> pd.DataFrame:
+                self.dividend_args.append(kwargs)
+                return pd.DataFrame()
+
         with tempfile.TemporaryDirectory() as tmpdir:
             pro = FakePro()
             prefetch_tushare_strategy_cache(
@@ -284,6 +322,7 @@ class PrefetchTushareCacheTest(unittest.TestCase):
 
         self.assertEqual(pro.daily_args[0]["end_date"], "20240105")
         self.assertEqual(pro.daily_basic_args[0]["end_date"], "20240105")
+        self.assertEqual(pro.dividend_args[0]["end_date"], "20240106")
 
 
 if __name__ == "__main__":

@@ -9,7 +9,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from backtest.data.tushare import run_tushare_expected_return_backtest, write_backtest_artifacts
-from backtest.stock_pool import resolve_stock_pool
+from backtest.plotting import plot_portfolio_history
+from backtest.stock_pool import load_stock_name_map, resolve_stock_pool
 from backtest.strategy import StrategyConfig
 
 
@@ -28,6 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_parser().parse_args()
     stock_pool = resolve_stock_pool(args)
+    stock_name_map = load_stock_name_map(args.stock_pool_file) if args.stock_pool_file else {}
     if not stock_pool:
         raise SystemExit("股票池为空。请通过 --stock-pool 或 --stock-pool-file 传入至少一个 ts_code")
 
@@ -42,7 +44,18 @@ def main() -> None:
         strategy_config=StrategyConfig(initial_cash=args.initial_cash),
         cache_dir=args.cache_dir,
     )
-    output_paths = write_backtest_artifacts(artifacts, output_dir=output_dir)
+    output_paths = write_backtest_artifacts(
+        artifacts,
+        output_dir=output_dir,
+        cache_dir=args.cache_dir,
+        stock_name_map=stock_name_map,
+    )
+    portfolio_plot_path = output_dir / "portfolio_history.png"
+    plot_portfolio_history(
+        artifacts.backtest_result.portfolio_history,
+        rebalance_dates=artifacts.rebalance_dates,
+        output=portfolio_plot_path,
+    )
 
     final_row = artifacts.backtest_result.portfolio_history.iloc[-1]
     print("回测完成")
@@ -57,6 +70,11 @@ def main() -> None:
     print(output_paths.trades_path)
     print(output_paths.holdings_path)
     print(output_paths.signals_path)
+    print(output_paths.rebalance_path)
+    print(output_paths.rebalance_summary_path)
+    print(output_paths.rebalance_plot_path)
+    print(output_paths.stock_report_dir)
+    print(portfolio_plot_path)
     print("缓存目录:")
     print(Path(args.cache_dir).resolve())
 
