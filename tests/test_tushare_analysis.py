@@ -24,30 +24,23 @@ class TushareAnalysisTest(unittest.TestCase):
                 ],
             )
             self._write_csv(
-                cache_root / "daily_basic" / "600519.SH__pe_ttm.csv",
+                cache_root / "daily_basic" / "600519.SH__pe_ttm__close.csv",
                 [
-                    {"ts_code": "600519.SH", "trade_date": "20230102", "pe_ttm": 10.0},
-                    {"ts_code": "600519.SH", "trade_date": "20230103", "pe_ttm": 11.0},
-                    {"ts_code": "600519.SH", "trade_date": "20230104", "pe_ttm": 12.0},
-                    {"ts_code": "600519.SH", "trade_date": "20230105", "pe_ttm": 13.0},
-                    {"ts_code": "600519.SH", "trade_date": "20230106", "pe_ttm": 14.0},
-                    {"ts_code": "600519.SH", "trade_date": "20230109", "pe_ttm": 15.0},
-                    {"ts_code": "600519.SH", "trade_date": "20230110", "pe_ttm": 16.0},
-                    {"ts_code": "600519.SH", "trade_date": "20230111", "pe_ttm": 17.0},
-                    {"ts_code": "600519.SH", "trade_date": "20230112", "pe_ttm": 18.0},
-                    {"ts_code": "600519.SH", "trade_date": "20230113", "pe_ttm": 19.0},
-                    {"ts_code": "600519.SH", "trade_date": "20230116", "pe_ttm": 20.0},
-                    {"ts_code": "600519.SH", "trade_date": "20230117", "pe_ttm": 21.0},
-                    {"ts_code": "600519.SH", "trade_date": "20240102", "pe_ttm": 22.0},
-                    {"ts_code": "600519.SH", "trade_date": "20240103", "pe_ttm": 23.0},
-                    {"ts_code": "600519.SH", "trade_date": "20240104", "pe_ttm": 24.0},
-                ],
-            )
-            self._write_csv(
-                cache_root / "daily" / "600519.SH__close.csv",
-                [
-                    {"ts_code": "600519.SH", "trade_date": "20240102", "close": 100.0},
-                    {"ts_code": "600519.SH", "trade_date": "20240104", "close": 102.0},
+                    {"ts_code": "600519.SH", "trade_date": "20230102", "pe_ttm": 10.0, "close": 90.0},
+                    {"ts_code": "600519.SH", "trade_date": "20230103", "pe_ttm": 11.0, "close": 91.0},
+                    {"ts_code": "600519.SH", "trade_date": "20230104", "pe_ttm": 12.0, "close": 92.0},
+                    {"ts_code": "600519.SH", "trade_date": "20230105", "pe_ttm": 13.0, "close": 93.0},
+                    {"ts_code": "600519.SH", "trade_date": "20230106", "pe_ttm": 14.0, "close": 94.0},
+                    {"ts_code": "600519.SH", "trade_date": "20230109", "pe_ttm": 15.0, "close": 95.0},
+                    {"ts_code": "600519.SH", "trade_date": "20230110", "pe_ttm": 16.0, "close": 96.0},
+                    {"ts_code": "600519.SH", "trade_date": "20230111", "pe_ttm": 17.0, "close": 97.0},
+                    {"ts_code": "600519.SH", "trade_date": "20230112", "pe_ttm": 18.0, "close": 98.0},
+                    {"ts_code": "600519.SH", "trade_date": "20230113", "pe_ttm": 19.0, "close": 99.0},
+                    {"ts_code": "600519.SH", "trade_date": "20230116", "pe_ttm": 20.0, "close": 100.0},
+                    {"ts_code": "600519.SH", "trade_date": "20230117", "pe_ttm": 21.0, "close": 101.0},
+                    {"ts_code": "600519.SH", "trade_date": "20240102", "pe_ttm": 22.0, "close": 100.0},
+                    {"ts_code": "600519.SH", "trade_date": "20240103", "pe_ttm": 23.0, "close": 100.0},
+                    {"ts_code": "600519.SH", "trade_date": "20240104", "pe_ttm": 24.0, "close": 102.0},
                 ],
             )
             self._write_csv(
@@ -82,8 +75,8 @@ class TushareAnalysisTest(unittest.TestCase):
     def test_cached_stock_analysis_frames_resolves_as_of_values(self) -> None:
         daily_basic = pd.DataFrame(
             [
-                {"date": pd.Timestamp("2024-01-02"), "pe_ttm": 10.0},
-                {"date": pd.Timestamp("2024-01-03"), "pe_ttm": 11.0},
+                {"date": pd.Timestamp("2024-01-02"), "pe_ttm": 10.0, "close": 100.0},
+                {"date": pd.Timestamp("2024-01-03"), "pe_ttm": 11.0, "close": 101.0},
             ]
         )
         report_rc = pd.DataFrame(
@@ -97,20 +90,13 @@ class TushareAnalysisTest(unittest.TestCase):
                 {"ann_date": pd.Timestamp("2023-12-31"), "end_date": pd.Timestamp("2023-12-31"), "eps": 10.0},
             ]
         )
-        daily_close = pd.DataFrame(
-            [
-                {"date": pd.Timestamp("2024-01-02"), "close": 100.0},
-            ]
-        )
         analysis = CachedStockAnalysisFrames(
             daily_basic=daily_basic,
             report_rc=report_rc,
             fina_indicator=fina_indicator,
-            daily_close=daily_close,
             daily_basic_dates=daily_basic["date"].to_numpy(),
             report_dates=report_rc["report_date"].to_numpy(),
             fina_ann_dates=fina_indicator["ann_date"].to_numpy(),
-            close_dates=daily_close["date"].to_numpy(),
         )
 
         current_pe, pe_history = analysis.resolve_current_pe_and_history(
@@ -126,7 +112,7 @@ class TushareAnalysisTest(unittest.TestCase):
         self.assertEqual(base_quarter, "2023Q4")
         self.assertEqual(ann_date, "20231231")
         self.assertEqual(base_eps, 10.0)
-        self.assertEqual(analysis.resolve_close(pd.Timestamp("2024-01-03")), 100.0)
+        self.assertEqual(analysis.resolve_close(pd.Timestamp("2024-01-03")), 101.0)
 
     @staticmethod
     def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:

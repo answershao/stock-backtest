@@ -9,6 +9,10 @@ from src.data.cache import TushareDataCache
 from src.data.tushare_cache import sanitize_cache_key_parts
 from src.data.tushare_cache_helpers import (
     filter_frame_by_date_range,
+    merge_cache_frames,
+    merge_cache_frames_with_dedupe,
+    normalize_yyyymmdd_column,
+    read_cache_frame,
     update_incremental_cache,
 )
 from src.data.tushare_expected_return import fetch_report_rc_from_tushare
@@ -75,7 +79,6 @@ def prefetch_tushare_cache(
         end_date=resolved_end_date,
     )
     for ts_code in stock_pool:
-        update_daily_cache(pro, ts_code, cache=cache, start_date=FULL_HISTORY_START_DATE, end_date=resolved_end_date, trading_dates=trading_dates)
         update_daily_basic_cache(pro, ts_code, cache=cache, start_date=FULL_HISTORY_START_DATE, end_date=resolved_end_date, trading_dates=trading_dates)
         update_report_rc_cache(pro, ts_code, cache=cache, start_date=report_rc_start_date, end_date=resolved_end_date)
         update_fina_indicator_cache(pro, ts_code, cache=cache, start_date=FULL_HISTORY_START_DATE, end_date=resolved_end_date)
@@ -108,10 +111,8 @@ def clear_selected_cache_files(
                 path.unlink()
             continue
 
-        if dataset == "daily":
-            suffix = ["close"]
-        elif dataset == "daily_basic":
-            suffix = ["pe_ttm"]
+        if dataset == "daily_basic":
+            suffix = ["pe_ttm", "close"]
         elif dataset in {"report_rc", "fina_indicator", "dividend"}:
             suffix = []
         else:
@@ -148,31 +149,6 @@ def update_trade_cal_cache(
     return tuple(sorted(dates.tolist()))
 
 
-def update_daily_cache(
-    pro,
-    ts_code: str,
-    *,
-    cache: TushareDataCache,
-    start_date: str,
-    end_date: str,
-    trading_dates: tuple[pd.Timestamp, ...],
-) -> pd.DataFrame:
-    effective_end_date = resolve_trade_date_on_or_before(trading_dates, end_date)
-    if effective_end_date is None:
-        return pd.DataFrame(columns=["ts_code", "trade_date", "close"])
-    return update_incremental_cache(
-        cache=cache,
-        dataset="daily",
-        key_parts=[ts_code, "close"],
-        requested_start_date=start_date,
-        requested_end_date=effective_end_date,
-        date_column="trade_date",
-        fetcher=lambda fetch_start, fetch_end: pro.daily(ts_code=ts_code, start_date=fetch_start, end_date=fetch_end, fields="ts_code,trade_date,close"),
-        empty_columns=["ts_code", "trade_date", "close"],
-        sort_columns=["trade_date"],
-    )
-
-
 def update_daily_basic_cache(
     pro,
     ts_code: str,
@@ -184,16 +160,21 @@ def update_daily_basic_cache(
 ) -> pd.DataFrame:
     effective_end_date = resolve_trade_date_on_or_before(trading_dates, end_date)
     if effective_end_date is None:
-        return pd.DataFrame(columns=["ts_code", "trade_date", "pe_ttm"])
+        return pd.DataFrame(columns=["ts_code", "trade_date", "pe_ttm", "close"])
     return update_incremental_cache(
         cache=cache,
         dataset="daily_basic",
-        key_parts=[ts_code, "pe_ttm"],
+        key_parts=[ts_code, "pe_ttm", "close"],
         requested_start_date=start_date,
         requested_end_date=effective_end_date,
         date_column="trade_date",
-        fetcher=lambda fetch_start, fetch_end: pro.daily_basic(ts_code=ts_code, start_date=fetch_start, end_date=fetch_end, fields="ts_code,trade_date,pe_ttm"),
-        empty_columns=["ts_code", "trade_date", "pe_ttm"],
+        fetcher=lambda fetch_start, fetch_end: pro.daily_basic(
+            ts_code=ts_code,
+            start_date=fetch_start,
+            end_date=fetch_end,
+            fields="ts_code,trade_date,pe_ttm,close",
+        ),
+        empty_columns=["ts_code", "trade_date", "pe_ttm", "close"],
         sort_columns=["trade_date"],
     )
 
@@ -234,10 +215,23 @@ def update_fina_indicator_cache(
         requested_start_date=start_date,
         requested_end_date=end_date,
         date_column="ann_date",
-        fetcher=lambda fetch_start, fetch_end: pro.fina_indicator(ts_code=ts_code, start_date=fetch_start, end_date=fetch_end),
+        fetcher=lambda fetch_start, fetch_end: filter_annual_fina_indicator_frame(
+            pro.fina_indicator(ts_code=ts_code, start_date=fetch_start, end_date=fetch_end)
+        ),
         empty_columns=["ann_date", "end_date", "eps"],
         sort_columns=["end_date", "ann_date"],
+        dedupe_subset=["end_date"],
+        normalize_date_columns=["end_date"],
     )
+
+
+def filter_annual_fina_indicator_frame(frame: pd.DataFrame | None) -> pd.DataFrame:
+    if frame is None or frame.empty:
+        return pd.DataFrame(columns=["ann_date", "end_date", "eps"])
+    if "end_date" not in frame.columns:
+        return frame.copy()
+    annual_mask = frame["end_date"].astype(str).str.endswith("1231")
+    return frame.loc[annual_mask].reset_index(drop=True)
 
 
 def update_dividend_cache(
@@ -248,32 +242,92 @@ def update_dividend_cache(
     start_date: str,
     end_date: str,
 ) -> pd.DataFrame:
-    return update_incremental_cache(
-        cache=cache,
-        dataset="dividend",
-        key_parts=[ts_code],
-        requested_start_date=start_date,
-        requested_end_date=end_date,
-        date_column="ex_date",
-        fetcher=lambda fetch_start, fetch_end: _fetch_dividend_frame(
-            pro,
-            ts_code=ts_code,
-            start_date=fetch_start,
-            end_date=fetch_end,
-        ),
-        empty_columns=["ts_code", "ex_date", "cash_div", "cash_div_tax", "div_proc"],
-        sort_columns=["ex_date"],
+    existing = read_cache_frame(cache.root_dir, dataset="dividend", key_parts=[ts_code])
+    fetched = filter_implemented_dividend_frame(_fetch_dividend_frame(pro, ts_code=ts_code))
+    if fetched is None:
+        fetched = pd.DataFrame(
+            columns=[
+                "ts_code",
+                "ann_date",
+                "record_date",
+                "ex_date",
+                "imp_ann_date",
+                "cash_div",
+                "cash_div_tax",
+                "stk_div",
+                "stk_bo_rate",
+                "stk_co_rate",
+                "div_proc",
+            ]
+        )
+    elif fetched.empty:
+        fetched = pd.DataFrame(
+            columns=list(fetched.columns)
+            or [
+                "ts_code",
+                "ann_date",
+                "record_date",
+                "ex_date",
+                "imp_ann_date",
+                "cash_div",
+                "cash_div_tax",
+                "stk_div",
+                "stk_bo_rate",
+                "stk_co_rate",
+                "div_proc",
+            ]
+        )
+
+    for column in ["ann_date", "record_date", "ex_date", "imp_ann_date"]:
+        existing = normalize_yyyymmdd_column(existing, column)
+        fetched = normalize_yyyymmdd_column(fetched, column)
+    combined = merge_cache_frames_with_dedupe(
+        existing,
+        fetched,
+        sort_columns=_resolve_dividend_sort_columns(existing, fetched),
+        dedupe_subset=["ex_date"],
     )
+    cache.write(dataset="dividend", key_parts=[ts_code], frame=combined)
+    return combined
 
 
 def _fetch_dividend_frame(
     pro,
     *,
     ts_code: str,
-    start_date: str,
-    end_date: str,
 ) -> pd.DataFrame:
-    return pro.dividend(ts_code=ts_code, start_date=start_date, end_date=end_date)
+    return pro.dividend(
+        ts_code=ts_code,
+        fields="ts_code,ann_date,record_date,ex_date,imp_ann_date,cash_div,cash_div_tax,stk_div,stk_bo_rate,stk_co_rate,div_proc",
+    )
+
+
+def filter_implemented_dividend_frame(frame: pd.DataFrame | None) -> pd.DataFrame:
+    if frame is None or frame.empty:
+        return pd.DataFrame(
+            columns=[
+                "ts_code",
+                "ann_date",
+                "record_date",
+                "ex_date",
+                "imp_ann_date",
+                "cash_div",
+                "cash_div_tax",
+                "stk_div",
+                "stk_bo_rate",
+                "stk_co_rate",
+                "div_proc",
+            ]
+        )
+    if "div_proc" not in frame.columns:
+        return frame.copy()
+    return frame.loc[frame["div_proc"].astype(str) == "实施"].reset_index(drop=True)
+
+
+def _resolve_dividend_sort_columns(existing: pd.DataFrame, fetched: pd.DataFrame) -> list[str]:
+    available_columns = set(existing.columns) | set(fetched.columns)
+    sort_columns = [column for column in ["ex_date", "record_date", "ann_date", "imp_ann_date"] if column in available_columns]
+    return sort_columns or ["ts_code"]
 
 
 def resolve_trade_date_on_or_before(

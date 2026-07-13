@@ -31,27 +31,22 @@ class CachedStockAnalysisFrames:
     daily_basic: pd.DataFrame
     report_rc: pd.DataFrame
     fina_indicator: pd.DataFrame
-    daily_close: pd.DataFrame
     daily_basic_dates: np.ndarray
     report_dates: np.ndarray
     fina_ann_dates: np.ndarray
-    close_dates: np.ndarray
 
     @classmethod
     def from_cache(cls, *, cache_root: Path, ts_code: str) -> "CachedStockAnalysisFrames":
         daily_basic = normalize_daily_basic(read_stock_cache_frame(cache_root, "daily_basic", ts_code))
-        daily_close = normalize_daily_close(read_stock_cache_frame(cache_root, "daily", ts_code))
         report_rc = normalize_report_rc(read_stock_cache_frame(cache_root, "report_rc", ts_code))
         fina_indicator = normalize_fina_indicator(read_stock_cache_frame(cache_root, "fina_indicator", ts_code))
         return cls(
             daily_basic=daily_basic,
             report_rc=report_rc,
             fina_indicator=fina_indicator,
-            daily_close=daily_close,
             daily_basic_dates=daily_basic["date"].to_numpy(),
             report_dates=report_rc["report_date"].to_numpy(),
             fina_ann_dates=fina_indicator["ann_date"].to_numpy(),
-            close_dates=daily_close["date"].to_numpy(),
         )
 
     def resolve_current_pe_and_history(
@@ -79,10 +74,10 @@ class CachedStockAnalysisFrames:
         return resolve_base_annual_eps_with_ann_date(self.fina_indicator.iloc[:end_index], as_of_ts)
 
     def resolve_close(self, as_of_ts: pd.Timestamp) -> float | None:
-        end_index = self._right_index(self.close_dates, as_of_ts)
+        end_index = self._right_index(self.daily_basic_dates, as_of_ts)
         if end_index == 0:
             return None
-        value = self.daily_close.iloc[end_index - 1]["close"]
+        value = self.daily_basic.iloc[end_index - 1]["close"]
         return None if pd.isna(value) else float(value)
 
     @staticmethod
@@ -174,14 +169,8 @@ def normalize_daily_basic(data: pd.DataFrame) -> pd.DataFrame:
     frame = data.rename(columns={"trade_date": "date"}).copy()
     frame["date"] = pd.to_datetime(frame["date"], format="%Y%m%d", errors="coerce")
     frame["pe_ttm"] = pd.to_numeric(frame["pe_ttm"], errors="coerce")
-    return frame.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
-
-
-def normalize_daily_close(data: pd.DataFrame) -> pd.DataFrame:
-    frame = data.rename(columns={"trade_date": "date"}).copy()
-    frame["date"] = pd.to_datetime(frame["date"], format="%Y%m%d", errors="coerce")
     frame["close"] = pd.to_numeric(frame["close"], errors="coerce")
-    return frame.dropna(subset=["date", "close"]).sort_values("date").reset_index(drop=True)
+    return frame.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
 
 
 def normalize_report_rc(data: pd.DataFrame) -> pd.DataFrame:

@@ -127,7 +127,8 @@ def normalize_fina_indicator_frame(data: pd.DataFrame) -> pd.DataFrame:
     frame["ann_date"] = pd.to_datetime(frame["ann_date"], format="%Y%m%d", errors="coerce")
     frame["end_date"] = pd.to_datetime(frame["end_date"], format="%Y%m%d", errors="coerce")
     frame["eps"] = pd.to_numeric(frame["eps"], errors="coerce")
-    return frame.dropna(subset=["ann_date", "end_date", "eps"]).sort_values(["end_date", "ann_date"]).reset_index(drop=True)
+    frame = frame.dropna(subset=["ann_date", "end_date", "eps"]).sort_values(["end_date", "ann_date"]).reset_index(drop=True)
+    return frame.drop_duplicates(subset=["end_date"], keep="last").reset_index(drop=True)
 
 
 def resolve_base_annual_eps_with_ann_date(

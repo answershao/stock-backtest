@@ -21,6 +21,21 @@ def read_cache_frame(
 
 
 def merge_cache_frames(existing: pd.DataFrame, fetched: pd.DataFrame, *, sort_columns: list[str]) -> pd.DataFrame:
+    return merge_cache_frames_with_dedupe(
+        existing,
+        fetched,
+        sort_columns=sort_columns,
+        dedupe_subset=None,
+    )
+
+
+def merge_cache_frames_with_dedupe(
+    existing: pd.DataFrame,
+    fetched: pd.DataFrame,
+    *,
+    sort_columns: list[str],
+    dedupe_subset: list[str] | None,
+) -> pd.DataFrame:
     if existing.empty:
         base = fetched.copy()
     elif fetched.empty:
@@ -30,7 +45,12 @@ def merge_cache_frames(existing: pd.DataFrame, fetched: pd.DataFrame, *, sort_co
     if base.empty:
         return base
     base = base.drop_duplicates()
-    return base.sort_values(sort_columns).reset_index(drop=True)
+    base = base.sort_values(sort_columns).reset_index(drop=True)
+    if dedupe_subset:
+        subset = [column for column in dedupe_subset if column in base.columns]
+        if subset:
+            base = base.drop_duplicates(subset=subset, keep="last").reset_index(drop=True)
+    return base
 
 
 def filter_frame_by_date_range(frame: pd.DataFrame, column: str, start_date: str, end_date: str) -> pd.DataFrame:
@@ -76,6 +96,8 @@ def update_incremental_cache(
     fetcher,
     empty_columns: list[str],
     sort_columns: list[str],
+    dedupe_subset: list[str] | None = None,
+    normalize_date_columns: list[str] | None = None,
 ) -> pd.DataFrame:
     existing = read_cache_frame(
         cache.root_dir,
@@ -97,9 +119,16 @@ def update_incremental_cache(
     elif fetched.empty:
         fetched = pd.DataFrame(columns=list(fetched.columns) or empty_columns)
 
-    existing = normalize_yyyymmdd_column(existing, date_column)
-    fetched = normalize_yyyymmdd_column(fetched, date_column)
-    combined = merge_cache_frames(existing, fetched, sort_columns=sort_columns)
+    columns_to_normalize = [date_column, *(normalize_date_columns or [])]
+    for column in dict.fromkeys(columns_to_normalize):
+        existing = normalize_yyyymmdd_column(existing, column)
+        fetched = normalize_yyyymmdd_column(fetched, column)
+    combined = merge_cache_frames_with_dedupe(
+        existing,
+        fetched,
+        sort_columns=sort_columns,
+        dedupe_subset=dedupe_subset,
+    )
     cache.write(dataset=dataset, key_parts=key_parts, frame=combined)
     return combined
 
@@ -116,9 +145,7 @@ def read_single_cache_frame(cache_root: Path, dataset: str) -> pd.DataFrame:
 
 
 def read_stock_cache_frame(cache_root: Path, dataset: str, ts_code: str) -> pd.DataFrame:
-    key_parts = [ts_code, "pe_ttm"] if dataset == "daily_basic" else [ts_code]
-    if dataset == "daily":
-        key_parts = [ts_code, "close"]
+    key_parts = [ts_code, "pe_ttm", "close"] if dataset == "daily_basic" else [ts_code]
     if dataset == "dividend":
         key_parts = [ts_code]
     frame = read_cache_frame(

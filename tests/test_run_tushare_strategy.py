@@ -62,6 +62,11 @@ class RunTushareStrategyCliTest(unittest.TestCase):
 
         self.assertEqual(args.refresh_datasets, "report_rc")
 
+    def test_parse_args_supports_validate_only(self) -> None:
+        args = parse_args(["--validate-only"])
+
+        self.assertTrue(args.validate_only)
+
     def test_plot_parser_uses_local_config_defaults(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "config.local.json"
