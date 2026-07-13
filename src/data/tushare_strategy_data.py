@@ -5,18 +5,18 @@ from pathlib import Path
 
 import pandas as pd
 
-from backtest.expected_return import GrowthInputs, calculate_expected_return_3y, resolve_target_quarter
-from backtest.strategy import BacktestResult, StrategyConfig, run_expected_return_strategy
-from backtest.data.cache import TushareDataCache
-from backtest.data.tushare_analysis import normalize_daily_basic, normalize_fina_indicator, normalize_report_rc, resolve_base_annual_eps
-from backtest.data.tushare_cache_helpers import (
+from src.expected_return import GrowthInputs, calculate_expected_return_3y, resolve_target_quarter
+from src.strategy import BacktestResult, StrategyConfig, run_expected_return_strategy
+from src.data.cache import TushareDataCache
+from src.data.tushare_analysis import normalize_daily_basic, normalize_fina_indicator, normalize_report_rc, resolve_base_annual_eps
+from src.data.tushare_cache_helpers import (
     filter_frame_by_date_range,
     legacy_cache_patterns,
     load_cached_dataset_frame,
     sanitize_cache_key_parts,
     update_incremental_cache,
 )
-from backtest.data.tushare_expected_return import build_consensus_growth_from_report_rc, fetch_report_rc_from_tushare
+from src.data.tushare_expected_return import build_consensus_growth_from_report_rc, fetch_report_rc_from_tushare
 
 FULL_HISTORY_START_DATE = "19900101"
 
@@ -491,8 +491,8 @@ def write_backtest_artifacts(
     rebalance_report.to_csv(rebalance_path, index=False)
     rebalance_summary.to_csv(rebalance_summary_path, index=False)
 
-    from backtest.plotting import plot_rebalance_actions
-    from backtest.plotting import plot_stock_lifecycle_reports
+    from src.plotting import plot_rebalance_actions
+    from src.plotting import plot_stock_lifecycle_reports
 
     plot_rebalance_actions(rebalance_report, output=rebalance_plot_path)
     plot_stock_lifecycle_reports(

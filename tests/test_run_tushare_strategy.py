@@ -3,7 +3,7 @@ import unittest
 from argparse import Namespace
 from pathlib import Path
 
-from backtest.stock_pool import resolve_stock_pool
+from src.stock_pool import resolve_stock_pool
 
 
 class RunTushareStrategyCliTest(unittest.TestCase):

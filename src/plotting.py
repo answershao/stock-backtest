@@ -8,7 +8,7 @@ from matplotlib import font_manager
 from matplotlib.ticker import PercentFormatter
 import pandas as pd
 
-from backtest.data.tushare import ExpectedReturnTimeseriesRequest, build_expected_return_timeseries
+from src.data.tushare import ExpectedReturnTimeseriesRequest, build_expected_return_timeseries
 
 
 def build_expected_return_frame(

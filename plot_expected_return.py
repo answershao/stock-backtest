@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from backtest.plotting import build_expected_return_frame, plot_expected_return_frame
+from src.plotting import build_expected_return_frame, plot_expected_return_frame
 
 
 def build_parser() -> argparse.ArgumentParser:

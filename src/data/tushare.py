@@ -1,12 +1,12 @@
 """Tushare-specific data workflows."""
 
-from backtest.data.tushare_analysis import (
+from src.data.tushare_analysis import (
     ExpectedReturnTimeseriesRequest,
     build_expected_return_timeseries,
     calculate_expected_return_from_cache,
 )
-from backtest.data.tushare_expected_return import TushareConsensusSnapshot, create_tushare_pro
-from backtest.data.tushare_strategy import (
+from src.data.tushare_expected_return import TushareConsensusSnapshot, create_tushare_pro
+from src.data.tushare_strategy import (
     BacktestOutputPaths,
     FULL_HISTORY_START_DATE,
     TushareBacktestArtifacts,

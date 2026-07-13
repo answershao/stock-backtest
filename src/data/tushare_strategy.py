@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backtest.data.tushare_analysis import (
+from src.data.tushare_analysis import (
     calculate_expected_return_from_cache,
     normalize_daily_basic as _normalize_daily_basic,
     normalize_fina_indicator as _normalize_fina_indicator,
@@ -8,11 +8,11 @@ from backtest.data.tushare_analysis import (
     resolve_base_annual_eps_with_ann_date as _resolve_base_annual_eps_with_ann_date,
     resolve_trade_date_on_or_before_from_cache as _resolve_trade_date_on_or_before_from_cache,
 )
-from backtest.data.tushare_cache_helpers import (
+from src.data.tushare_cache_helpers import (
     read_single_cache_frame as _read_single_cache_frame,
     read_stock_cache_frame as _read_stock_cache_frame,
 )
-from backtest.data.tushare_strategy_data import (
+from src.data.tushare_strategy_data import (
     BacktestOutputPaths,
     FULL_HISTORY_START_DATE,
     TushareBacktestArtifacts,

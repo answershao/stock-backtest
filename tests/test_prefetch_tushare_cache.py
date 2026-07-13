@@ -4,12 +4,12 @@ from pathlib import Path
 
 import pandas as pd
 
-from backtest.data.tushare_strategy import FULL_HISTORY_START_DATE, prefetch_tushare_strategy_cache
+from src.data.tushare_strategy import FULL_HISTORY_START_DATE, prefetch_tushare_strategy_cache
 
 
 class PrefetchTushareCacheTest(unittest.TestCase):
     def test_report_rc_fetch_paginates_until_empty(self) -> None:
-        from backtest.data.tushare_expected_return import fetch_report_rc_from_tushare
+        from src.data.tushare_expected_return import fetch_report_rc_from_tushare
 
         class FakePro:
             def __init__(self) -> None:

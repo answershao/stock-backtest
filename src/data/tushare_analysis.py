@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pandas as pd
 
-from backtest.expected_return import GrowthInputs, calculate_expected_return_3y, resolve_target_quarter
-from backtest.data.tushare_cache_helpers import read_single_cache_frame, read_stock_cache_frame
-from backtest.data.tushare_expected_return import TushareConsensusSnapshot, build_consensus_growth_from_report_rc
+from src.expected_return import GrowthInputs, calculate_expected_return_3y, resolve_target_quarter
+from src.data.tushare_cache_helpers import read_single_cache_frame, read_stock_cache_frame
+from src.data.tushare_expected_return import TushareConsensusSnapshot, build_consensus_growth_from_report_rc
 
 
 @dataclass(frozen=True)

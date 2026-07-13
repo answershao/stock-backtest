@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from backtest.data.tushare_cache import TushareDataCache
-from backtest.data.tushare_strategy import fetch_open_trade_dates_cached
+from src.data.tushare_cache import TushareDataCache
+from src.data.tushare_strategy import fetch_open_trade_dates_cached
 
 
 class TushareDataCacheTest(unittest.TestCase):

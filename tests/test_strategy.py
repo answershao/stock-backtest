@@ -2,7 +2,7 @@ import unittest
 
 import pandas as pd
 
-from backtest.strategy import StrategyConfig, run_expected_return_strategy
+from src.strategy import StrategyConfig, run_expected_return_strategy
 
 
 class ExpectedReturnStrategyBacktestTest(unittest.TestCase):

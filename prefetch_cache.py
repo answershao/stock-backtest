@@ -9,8 +9,8 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from backtest.data.tushare import create_tushare_pro, prefetch_tushare_strategy_cache
-from backtest.stock_pool import resolve_stock_pool
+from src.data.tushare import create_tushare_pro, prefetch_tushare_strategy_cache
+from src.stock_pool import resolve_stock_pool
 
 
 def build_parser() -> argparse.ArgumentParser:

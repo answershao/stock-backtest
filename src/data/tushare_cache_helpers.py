@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from backtest.data.tushare_cache import TushareDataCache
+from src.data.tushare_cache import TushareDataCache
 
 
 def sanitize_cache_key_parts(key_parts: list[str]) -> list[str]:

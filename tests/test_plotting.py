@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from backtest.plotting import plot_portfolio_history, plot_rebalance_actions, plot_stock_lifecycle_reports
+from src.plotting import plot_portfolio_history, plot_rebalance_actions, plot_stock_lifecycle_reports
 
 
 class PlottingTest(unittest.TestCase):

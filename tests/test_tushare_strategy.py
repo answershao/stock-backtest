@@ -4,13 +4,13 @@ from pathlib import Path
 
 import pandas as pd
 
-from backtest.stock_pool import parse_stock_pool
-from backtest.data.tushare_strategy import (
+from src.stock_pool import parse_stock_pool
+from src.data.tushare_strategy import (
     calculate_expected_return_from_cache,
     resolve_strategy_dates,
     run_tushare_expected_return_backtest,
 )
-from backtest.strategy import StrategyConfig
+from src.strategy import StrategyConfig
 
 
 class TushareStrategyHelpersTest(unittest.TestCase):
