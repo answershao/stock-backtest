@@ -25,8 +25,8 @@ def build_parser(defaults: dict[str, Any] | None = None) -> argparse.ArgumentPar
     )
     parser.add_argument(
         "--start-date",
-        default=defaults.get("start_date", "20150630"),
-        help="起始日期，格式 YYYYMMDD，默认 20150630",
+        default=defaults.get("start_date", "20150101"),
+        help="起始日期，格式 YYYYMMDD，默认 20150101",
     )
     parser.add_argument(
         "--cache-dir",
@@ -101,7 +101,9 @@ def main() -> None:
                 "stock_name": stock_name,
                 "sample_trade_days": len(frame),
                 "latest_trade_date": latest_trade_date,
-                "mean_reversion_return_3y": None if latest is None else latest["mean_reversion_return_3y"],
+                "mean_reversion_return_3y": (
+                    None if latest is None else latest["mean_reversion_return_3y"]
+                ),
                 "consensus_cagr_3y": None if latest is None else latest["consensus_cagr_3y"],
                 "expected_return_3y": None if latest is None else latest["expected_return_3y"],
                 "valid": latest is not None,
@@ -126,11 +128,17 @@ def _load_stock_pool_map(args: argparse.Namespace) -> dict[str, str]:
     stock_pool = args.stock_pool
     if not isinstance(stock_pool, dict):
         return {}
-    return {str(code).strip(): str(name).strip() for code, name in stock_pool.items() if str(code).strip() and str(name).strip()}
+    return {
+        str(code).strip(): str(name).strip()
+        for code, name in stock_pool.items()
+        if str(code).strip() and str(name).strip()
+    }
 
 
 def _resolve_latest_valid_row(frame: pd.DataFrame) -> pd.Series | None:
-    valid = frame.dropna(subset=["mean_reversion_return_3y", "consensus_cagr_3y", "expected_return_3y"])
+    valid = frame.dropna(
+        subset=["mean_reversion_return_3y", "consensus_cagr_3y", "expected_return_3y"]
+    )
     if valid.empty:
         return None
     return valid.iloc[-1]

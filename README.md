@@ -4,6 +4,7 @@
 
 1. 读取股票池配置并把所需 Tushare 数据缓存到本地
 2. 基于本地缓存，按股票池逐只绘制历史三年年化收益率走势图
+3. 单独拉取某只股票的完整 `report_rc` 研报明细并导出 CSV
 
 常用命令：
 
@@ -11,6 +12,7 @@
 cp config.local.example.json config.local.json
 python3 prefetch_cache.py
 python3 plot_expected_return.py
+python3 fetch_report_rc.py --ts-code 600519.SH
 ```
 
 会在输出目录中同时生成每只股票的 PNG，以及一个汇总结果文件 `expected_return_summary.csv`。
