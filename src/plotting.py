@@ -47,7 +47,15 @@ def configure_matplotlib_font() -> bool:
     return False
 
 
-def plot_expected_return_frame(frame: pd.DataFrame, *, ts_code: str, start_date: str, end_date: str, output: Path) -> None:
+def plot_expected_return_frame(
+    frame: pd.DataFrame,
+    *,
+    ts_code: str,
+    stock_name: str | None = None,
+    start_date: str,
+    end_date: str,
+    output: Path,
+) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     has_cjk_font = configure_matplotlib_font()
     labels = _chart_labels(has_cjk_font=has_cjk_font)
@@ -57,7 +65,8 @@ def plot_expected_return_frame(frame: pd.DataFrame, *, ts_code: str, start_date:
     ax.plot(frame["date"], frame["consensus_cagr_3y"], label=labels["consensus_cagr"], linewidth=2)
     ax.plot(frame["date"], frame["expected_return_3y"], label=labels["expected_return"], linewidth=2.4)
     ax2.plot(frame["date"], frame["close"], label=labels["close"], color="#6b6b6b", linewidth=1.6, alpha=0.75)
-    ax.set_title(labels["title"].format(ts_code=ts_code, start_date=start_date, end_date=end_date))
+    display_name = _format_stock_display_name(ts_code=ts_code, stock_name=stock_name)
+    ax.set_title(labels["title"].format(stock=display_name, start_date=start_date, end_date=end_date))
     ax.set_xlabel(labels["x"])
     ax.set_ylabel(labels["y"])
     ax2.set_ylabel(labels["close"])
@@ -72,6 +81,12 @@ def plot_expected_return_frame(frame: pd.DataFrame, *, ts_code: str, start_date:
     plt.close(fig)
 
 
+def _format_stock_display_name(*, ts_code: str, stock_name: str | None) -> str:
+    if stock_name and stock_name.strip():
+        return f"{ts_code} {stock_name.strip()}"
+    return ts_code
+
+
 def _chart_labels(*, has_cjk_font: bool) -> dict[str, str]:
     if has_cjk_font:
         return {
@@ -79,7 +94,7 @@ def _chart_labels(*, has_cjk_font: bool) -> dict[str, str]:
             "consensus_cagr": "卖方三年 CAGR",
             "expected_return": "期望三年年化收益率",
             "close": "股价",
-            "title": "{ts_code} {start_date}-{end_date} 逐日三年收益率",
+            "title": "{stock} {start_date}-{end_date} 逐日三年收益率",
             "x": "日期",
             "y": "收益率",
         }
@@ -88,7 +103,7 @@ def _chart_labels(*, has_cjk_font: bool) -> dict[str, str]:
         "consensus_cagr": "Sell-side 3Y CAGR",
         "expected_return": "Expected 3Y Annual Return",
         "close": "Close",
-        "title": "{ts_code} {start_date}-{end_date} Daily 3Y Return",
+        "title": "{stock} {start_date}-{end_date} Daily 3Y Return",
         "x": "Date",
         "y": "Return",
     }

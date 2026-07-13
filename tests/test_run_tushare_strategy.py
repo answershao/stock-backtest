@@ -3,10 +3,77 @@ import unittest
 from argparse import Namespace
 from pathlib import Path
 
-from src.stock_pool import resolve_stock_pool
+from plot_expected_return import _load_cli_defaults as load_plot_cli_defaults
+from plot_expected_return import build_parser as build_plot_parser
+from prefetch_cache import _load_cli_defaults, build_parser, parse_args
+from src.local_config import load_local_config
+from src.stock_pool import load_stock_name_map, resolve_stock_pool
 
 
 class RunTushareStrategyCliTest(unittest.TestCase):
+    def test_load_local_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "config.local.json"
+            path.write_text('{"token":"abc","stock_pool":["600519.SH","000858.SZ"]}', encoding="utf-8")
+
+            result = load_local_config(path)
+
+        self.assertEqual(result["token"], "abc")
+        self.assertEqual(result["stock_pool"], ["600519.SH", "000858.SZ"])
+
+    def test_build_parser_uses_local_config_defaults(self) -> None:
+        args = build_parser().parse_args([])
+        self.assertIsNotNone(args)
+
+    def test_parse_args_uses_local_config_defaults(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "config.local.json"
+            path.write_text(
+                '{"token":"abc","stock_pool":["600519.SH"],"cache_dir":"tmp/cache","http_url":"https://example.com"}',
+                encoding="utf-8",
+            )
+
+            args = parse_args(["--config", str(path)])
+
+        self.assertEqual(args.token, "abc")
+        self.assertEqual(args.stock_pool, ["600519.SH"])
+        self.assertEqual(args.cache_dir, "tmp/cache")
+        self.assertEqual(args.http_url, "https://example.com")
+
+    def test_parse_args_cli_overrides_runtime_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "config.local.json"
+            path.write_text(
+                '{"refresh_datasets":"daily_basic"}',
+                encoding="utf-8",
+            )
+
+            args = parse_args(
+                [
+                    "--config",
+                    str(path),
+                    "--refresh-datasets",
+                    "report_rc",
+                ]
+            )
+
+        self.assertEqual(args.refresh_datasets, "report_rc")
+
+    def test_plot_parser_uses_local_config_defaults(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "config.local.json"
+            path.write_text(
+                '{"stock_pool":["000858.SZ"],"start_date":"20180101","cache_dir":"tmp/cache","output":"tmp/out"}',
+                encoding="utf-8",
+            )
+
+            defaults = load_plot_cli_defaults(["--config", str(path)])
+            args = build_plot_parser(defaults).parse_args(["--config", str(path)])
+
+        self.assertEqual(args.start_date, "20180101")
+        self.assertEqual(args.cache_dir, "tmp/cache")
+        self.assertEqual(args.output, "tmp/out")
+
     def test_resolve_stock_pool_from_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "pool.csv"
@@ -18,6 +85,26 @@ class RunTushareStrategyCliTest(unittest.TestCase):
                     stock_pool_file=str(path),
                 )
             )
+
+        self.assertEqual(result, ["600519.SH", "000858.SZ"])
+
+    def test_load_stock_name_map_from_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "pool.csv"
+            path.write_text("name,ts_code\n贵州茅台,600519.SH\n五粮液,000858.SZ\n", encoding="utf-8")
+
+            result = load_stock_name_map(path)
+
+        self.assertEqual(result["600519.SH"], "贵州茅台")
+        self.assertEqual(result["000858.SZ"], "五粮液")
+
+    def test_resolve_stock_pool_from_list(self) -> None:
+        result = resolve_stock_pool(
+            Namespace(
+                stock_pool=["600519.SH", "000858.SZ"],
+                stock_pool_file=None,
+            )
+        )
 
         self.assertEqual(result, ["600519.SH", "000858.SZ"])
 

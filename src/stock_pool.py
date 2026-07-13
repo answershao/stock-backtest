@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 import pandas as pd
 
 
-def parse_stock_pool(raw: str) -> list[str]:
-    codes = [code.strip() for code in raw.split(",")]
+def parse_stock_pool(raw: str | Iterable[str]) -> list[str]:
+    if isinstance(raw, str):
+        codes = [code.strip() for code in raw.split(",")]
+        return [code for code in codes if code]
+
+    codes = [str(code).strip() for code in raw]
     return [code for code in codes if code]
 
 

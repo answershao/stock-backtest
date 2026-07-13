@@ -4,8 +4,8 @@
 
 当前仓库只保留两个功能：
 
-1. 读取 [stock_pool_27.csv](stock_pool_27.csv) 中的 `ts_code`，把 Tushare 数据缓存到本地
-2. 基于本地缓存，绘制单只股票的历史三年年化收益率走势图
+1. 读取本地配置中的股票池，把 Tushare 数据缓存到本地
+2. 基于本地缓存，按股票池逐只绘制历史三年年化收益率走势图
 
 仓库中原有的回测、调仓、持仓分析相关代码已移除。
 
@@ -21,31 +21,35 @@ conda run -n stock python plot_expected_return.py --help
 ## 3. 缓存命令
 
 ```bash
-conda run -n stock python prefetch_cache.py \
-  --stock-pool-file stock_pool_27.csv \
-  --cache-dir artifacts/tushare_cache
+cp config.local.example.json config.local.json
+python3 prefetch_cache.py
 ```
 
 说明：
 
+- `config.local.json` 可同时放 `token` 和 `stock_pool`，并且不会参与 git 提交
+- 也支持在 `config.local.json` 中配置 `stock_pool_file`
+- 只要参数已在 `config.local.json` 定义，运行时就可以不再从命令行传入
 - 会缓存 `trade_cal`、`daily`、`daily_basic`、`report_rc`、`fina_indicator`、`dividend`
 - `--refresh-datasets` 可按数据集名强制重拉，例如 `report_rc,daily_basic`
-- 默认从 `TUSHARE_TOKEN` 环境变量读取 token
+- 缓存默认更新到运行当天；`token` 默认优先读取本地配置，其次读取 `TUSHARE_TOKEN` 环境变量
 
 ## 4. 绘图命令
 
 ```bash
-conda run -n stock python plot_expected_return.py \
-  --ts-code 600519.SH \
-  --start-date 20150630 \
-  --cache-dir artifacts/tushare_cache
+python3 plot_expected_return.py
 ```
 
 默认输出：
 
 ```text
-artifacts/expected_return_<ts_code>.png
+artifacts/expected_return/expected_return_<ts_code>.png
+artifacts/expected_return/expected_return_summary.csv
 ```
+
+补充说明：
+
+- 如果 `config.local.json` 通过 `stock_pool_file` 指向的 CSV 同时带有 `name` 列，汇总 CSV 和 PNG 标题会优先带上中文名称
 
 图中包含：
 

@@ -10,20 +10,16 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.data.tushare import create_tushare_pro, prefetch_tushare_cache
+from src.local_config import DEFAULT_LOCAL_CONFIG_PATH, load_local_config
 from src.stock_pool import resolve_stock_pool
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="拉取并更新 Tushare 本地缓存")
-    parser.add_argument("--stock-pool", help="股票池，逗号分隔，例如 600519.SH,000858.SZ")
-    parser.add_argument("--stock-pool-file", help="股票池文件，支持 csv，需包含 ts_code 列")
-    parser.add_argument("--token", default=os.getenv("TUSHARE_TOKEN"), help="Tushare token，默认读取环境变量 TUSHARE_TOKEN")
-    parser.add_argument("--http-url", default="https://tu.brze.top", help="Tushare HTTP 地址，默认 https://tu.brze.top")
-    parser.add_argument("--end-date", help="缓存截止日期，格式 YYYYMMDD；默认到今天")
     parser.add_argument(
-        "--cache-dir",
-        default="artifacts/tushare_cache",
-        help="Tushare 本地缓存目录，默认 artifacts/tushare_cache",
+        "--config",
+        default=DEFAULT_LOCAL_CONFIG_PATH,
+        help=f"本地配置文件路径，默认 {DEFAULT_LOCAL_CONFIG_PATH}",
     )
     parser.add_argument(
         "--refresh-datasets",
@@ -33,12 +29,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    args = build_parser().parse_args()
+    args = parse_args()
     if not args.token:
-        raise SystemExit("缺少 Tushare token。请传 --token 或设置环境变量 TUSHARE_TOKEN")
+        raise SystemExit("缺少 Tushare token。请在 config.local.json 中配置 token，或设置环境变量 TUSHARE_TOKEN")
     stock_pool = resolve_stock_pool(args)
     if not stock_pool:
-        raise SystemExit("股票池为空。请通过 --stock-pool 或 --stock-pool-file 传入至少一个 ts_code")
+        raise SystemExit("股票池为空。请在 config.local.json 中配置 stock_pool 或 stock_pool_file")
 
     cache_dir = Path(args.cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -48,7 +44,6 @@ def main() -> None:
         pro,
         stock_pool=stock_pool,
         cache_dir=cache_dir,
-        end_date=args.end_date,
         refresh_datasets=_parse_csv_option(args.refresh_datasets),
     )
 
@@ -63,6 +58,28 @@ def _parse_csv_option(raw: str | None) -> tuple[str, ...]:
     if not raw:
         return ()
     return tuple(item.strip() for item in raw.split(",") if item.strip())
+
+
+def _load_cli_defaults(argv: list[str] | None = None) -> dict[str, object]:
+    bootstrap = argparse.ArgumentParser(add_help=False)
+    bootstrap.add_argument("--config", default=DEFAULT_LOCAL_CONFIG_PATH)
+    known_args, _ = bootstrap.parse_known_args(argv)
+    return load_local_config(known_args.config)
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    args = build_parser().parse_args(argv)
+    defaults = _load_cli_defaults(argv)
+    merged = {
+        "config": args.config,
+        "stock_pool": defaults.get("stock_pool"),
+        "stock_pool_file": defaults.get("stock_pool_file"),
+        "token": defaults.get("token") or os.getenv("TUSHARE_TOKEN"),
+        "http_url": defaults.get("http_url", "https://tu.brze.top"),
+        "cache_dir": defaults.get("cache_dir", "artifacts/tushare_cache"),
+        "refresh_datasets": args.refresh_datasets or defaults.get("refresh_datasets"),
+    }
+    return argparse.Namespace(**merged)
 
 
 if __name__ == "__main__":

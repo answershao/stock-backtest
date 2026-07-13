@@ -33,6 +33,7 @@ class PlottingTest(unittest.TestCase):
             plot_expected_return_frame(
                 frame,
                 ts_code="600519.SH",
+                stock_name="贵州茅台",
                 start_date="20240102",
                 end_date="20240103",
                 output=output,

@@ -2,14 +2,17 @@
 
 当前仓库只保留两个功能：
 
-1. 读取 [stock_pool_27.csv](stock_pool_27.csv) 并把所需 Tushare 数据缓存到本地
-2. 基于本地缓存，绘制单只股票的历史三年年化收益率走势图
+1. 读取股票池配置并把所需 Tushare 数据缓存到本地
+2. 基于本地缓存，按股票池逐只绘制历史三年年化收益率走势图
 
 常用命令：
 
 ```bash
-conda run -n stock python prefetch_cache.py --stock-pool-file stock_pool_27.csv
-conda run -n stock python plot_expected_return.py --ts-code 600519.SH
+cp config.local.example.json config.local.json
+python3 prefetch_cache.py
+python3 plot_expected_return.py
 ```
+
+会在输出目录中同时生成每只股票的 PNG，以及一个汇总结果文件 `expected_return_summary.csv`。
 
 更多说明见 [design.md](design.md)。

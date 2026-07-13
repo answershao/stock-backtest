@@ -1,0 +1,11 @@
+{
+  "token": "your-tushare-token",
+  "stock_pool": [
+    "600809.SH"
+  ],
+  "start_date": "20150630",
+  "cache_dir": "artifacts/tushare_cache",
+  "output": null,
+  "refresh_datasets": null,
+  "http_url": "https://tu.brze.top"
+}

@@ -37,6 +37,7 @@ Thumbs.db
 # Environment / secrets
 .env
 .env.local
+config.local.json
 
 # Project outputs
 outputs/
