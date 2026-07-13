@@ -132,15 +132,8 @@ class PrefetchTushareCacheTest(unittest.TestCase):
                 self.daily_args = []
                 self.daily_basic_args = []
                 self.dividend_args = []
-                self.dividend_args = []
-                self.dividend_args = []
-                self.dividend_args = []
-                self.dividend_args = []
-                self.dividend_args = []
-                self.dividend_args = []
                 self.report_rc_args = []
                 self.fina_indicator_args = []
-                self.dividend_args = []
 
             def trade_cal(self, **kwargs) -> pd.DataFrame:
                 self.trade_cal_args.append(kwargs)

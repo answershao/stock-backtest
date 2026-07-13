@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Iterable
 
 import pandas as pd
 
@@ -39,10 +40,10 @@ def load_stock_name_map(path: str | Path) -> dict[str, str]:
     return dict(zip(subset["ts_code"], subset["name"]))
 
 
-def resolve_stock_pool(args: Any) -> list[str]:
-    if getattr(args, "stock_pool_file", None):
+def resolve_stock_pool(args: argparse.Namespace) -> list[str]:
+    if args.stock_pool_file:
         return load_stock_pool_file(args.stock_pool_file)
-    raw = getattr(args, "stock_pool", None)
+    raw = args.stock_pool
     if not raw:
         return []
     return parse_stock_pool(raw)

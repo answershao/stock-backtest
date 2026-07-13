@@ -150,23 +150,6 @@ def normalize_fina_indicator(data: pd.DataFrame) -> pd.DataFrame:
     return frame.dropna(subset=["ann_date", "end_date", "eps"]).sort_values(["end_date", "ann_date"]).reset_index(drop=True)
 
 
-def resolve_base_annual_eps(fina_indicator: pd.DataFrame, as_of: pd.Timestamp) -> tuple[str | None, float | None]:
-    if fina_indicator.empty:
-        return None, None
-    data = fina_indicator[fina_indicator["ann_date"] <= as_of].copy()
-    if data.empty:
-        return None, None
-    data = data[data["end_date"].dt.strftime("%m%d") == "1231"]
-    if data.empty:
-        return None, None
-    latest = data.sort_values(["end_date", "ann_date"]).drop_duplicates(subset=["end_date"], keep="last").iloc[-1]
-    base_quarter = f"{latest['end_date'].year}Q4"
-    base_eps = float(latest["eps"])
-    if base_eps <= 0:
-        return base_quarter, None
-    return base_quarter, base_eps
-
-
 def resolve_base_annual_eps_with_ann_date(
     fina_indicator: pd.DataFrame,
     as_of: pd.Timestamp,

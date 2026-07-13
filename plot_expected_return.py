@@ -119,10 +119,9 @@ def _load_cli_defaults(argv: list[str] | None = None) -> dict[str, Any]:
 
 
 def _load_stock_name_map(args: argparse.Namespace) -> dict[str, str]:
-    stock_pool_file = getattr(args, "stock_pool_file", None)
-    if not stock_pool_file:
+    if not args.stock_pool_file:
         return {}
-    return load_stock_name_map(stock_pool_file)
+    return load_stock_name_map(args.stock_pool_file)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

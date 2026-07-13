@@ -6,11 +6,9 @@ from pathlib import Path
 import pandas as pd
 
 from src.data.cache import TushareDataCache
+from src.data.tushare_cache import sanitize_cache_key_parts
 from src.data.tushare_cache_helpers import (
     filter_frame_by_date_range,
-    legacy_cache_patterns,
-    load_cached_dataset_frame,
-    sanitize_cache_key_parts,
     update_incremental_cache,
 )
 from src.data.tushare_expected_return import fetch_report_rc_from_tushare
@@ -43,16 +41,10 @@ def fetch_open_trade_dates_cached(
 ) -> tuple[pd.Timestamp, ...]:
     if cache is None:
         return fetch_open_trade_dates(pro, start_date, end_date)
-    frame = load_cached_dataset_frame(
-        cache=cache,
+    frame = cache.load_or_fetch(
         dataset="trade_cal",
-        canonical_key_parts=["full", "is_open_1"],
-        legacy_glob_patterns=legacy_cache_patterns(dataset="trade_cal", key_parts=["full", "is_open_1"]),
-        fallback_fetcher=lambda: cache.load_or_fetch(
-            dataset="trade_cal",
-            key_parts=[start_date, end_date, "is_open_1"],
-            fetcher=lambda: pro.trade_cal(exchange="", start_date=start_date, end_date=end_date, is_open="1"),
-        ),
+        key_parts=[start_date, end_date, "is_open_1"],
+        fetcher=lambda: pro.trade_cal(exchange="", start_date=start_date, end_date=end_date, is_open="1"),
     )
     if frame.empty:
         raise ValueError("Tushare 未返回交易日历。")
@@ -281,12 +273,7 @@ def _fetch_dividend_frame(
     start_date: str,
     end_date: str,
 ) -> pd.DataFrame:
-    if not hasattr(pro, "dividend"):
-        return pd.DataFrame(columns=["ts_code", "ex_date", "cash_div", "cash_div_tax", "div_proc"])
-    try:
-        return pro.dividend(ts_code=ts_code, start_date=start_date, end_date=end_date)
-    except TypeError:
-        return pro.dividend(ts_code=ts_code)
+    return pro.dividend(ts_code=ts_code, start_date=start_date, end_date=end_date)
 
 
 def resolve_trade_date_on_or_before(

@@ -4,76 +4,20 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.data.tushare_cache import TushareDataCache
+from src.data.tushare_cache import TushareDataCache, sanitize_cache_key_parts
 
 
-def sanitize_cache_key_parts(key_parts: list[str]) -> list[str]:
-    return [
-        part.strip()
-        .replace("/", "-")
-        .replace("\\", "-")
-        .replace(":", "-")
-        .replace("*", "-")
-        .replace("?", "-")
-        .replace('"', "-")
-        .replace("<", "-")
-        .replace(">", "-")
-        .replace("|", "-")
-        or "empty"
-        for part in key_parts
-    ]
-
-
-def legacy_cache_patterns(*, dataset: str, key_parts: list[str]) -> list[str]:
-    if dataset == "trade_cal":
-        return ["*__*__is_open_1.csv"]
-    if dataset == "daily":
-        return [f"{sanitize_cache_key_parts(key_parts[:1])[0]}__*__*__close.csv"]
-    if dataset == "daily_basic":
-        return [f"{sanitize_cache_key_parts(key_parts[:1])[0]}__*__*__pe_ttm.csv"]
-    if dataset in {"report_rc", "fina_indicator", "dividend"}:
-        return [f"{sanitize_cache_key_parts(key_parts[:1])[0]}__*.csv"]
-    return []
-
-
-def read_incremental_cache_frame(
+def read_cache_frame(
     cache_root: Path,
     *,
     dataset: str,
     key_parts: list[str],
-    legacy_glob_patterns: list[str],
 ) -> pd.DataFrame:
     dataset_dir = cache_root / dataset
     canonical_file = dataset_dir / ("__".join(sanitize_cache_key_parts(key_parts)) + ".csv")
     if canonical_file.exists():
         return pd.read_csv(canonical_file)
-
-    frames: list[pd.DataFrame] = []
-    for pattern in legacy_glob_patterns:
-        for file_path in sorted(dataset_dir.glob(pattern)):
-            frames.append(pd.read_csv(file_path))
-    if not frames:
-        return pd.DataFrame()
-    return pd.concat(frames, ignore_index=True)
-
-
-def load_cached_dataset_frame(
-    *,
-    cache: TushareDataCache,
-    dataset: str,
-    canonical_key_parts: list[str],
-    legacy_glob_patterns: list[str],
-    fallback_fetcher,
-) -> pd.DataFrame:
-    frame = read_incremental_cache_frame(
-        cache.root_dir,
-        dataset=dataset,
-        key_parts=canonical_key_parts,
-        legacy_glob_patterns=legacy_glob_patterns,
-    )
-    if not frame.empty:
-        return frame
-    return fallback_fetcher()
+    return pd.DataFrame()
 
 
 def merge_cache_frames(existing: pd.DataFrame, fetched: pd.DataFrame, *, sort_columns: list[str]) -> pd.DataFrame:
@@ -133,11 +77,10 @@ def update_incremental_cache(
     empty_columns: list[str],
     sort_columns: list[str],
 ) -> pd.DataFrame:
-    existing = read_incremental_cache_frame(
+    existing = read_cache_frame(
         cache.root_dir,
         dataset=dataset,
         key_parts=key_parts,
-        legacy_glob_patterns=legacy_cache_patterns(dataset=dataset, key_parts=key_parts),
     )
     if existing.empty:
         fetch_start_date = requested_start_date
@@ -162,11 +105,10 @@ def update_incremental_cache(
 
 
 def read_single_cache_frame(cache_root: Path, dataset: str) -> pd.DataFrame:
-    frame = read_incremental_cache_frame(
+    frame = read_cache_frame(
         cache_root,
         dataset=dataset,
         key_parts=["full", "is_open_1"],
-        legacy_glob_patterns=legacy_cache_patterns(dataset=dataset, key_parts=["full", "is_open_1"]),
     )
     if frame.empty:
         raise FileNotFoundError(f"缓存缺失: {cache_root / dataset}")
@@ -179,11 +121,10 @@ def read_stock_cache_frame(cache_root: Path, dataset: str, ts_code: str) -> pd.D
         key_parts = [ts_code, "close"]
     if dataset == "dividend":
         key_parts = [ts_code]
-    frame = read_incremental_cache_frame(
+    frame = read_cache_frame(
         cache_root,
         dataset=dataset,
         key_parts=key_parts,
-        legacy_glob_patterns=legacy_cache_patterns(dataset=dataset, key_parts=key_parts),
     )
     if frame.empty:
         safe_ts_code = sanitize_cache_key_parts([ts_code])[0]

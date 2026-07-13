@@ -45,9 +45,13 @@ class TushareDataCache:
         return path
 
     def _build_path(self, *, dataset: str, key_parts: list[str]) -> Path:
-        safe_parts = [_sanitize_path_part(part) for part in key_parts]
+        safe_parts = sanitize_cache_key_parts(key_parts)
         filename = "__".join(safe_parts) + ".csv"
         return self.root_dir / dataset / filename
+
+
+def sanitize_cache_key_parts(key_parts: list[str]) -> list[str]:
+    return [_sanitize_path_part(part) for part in key_parts]
 
 
 def _sanitize_path_part(value: str) -> str:
