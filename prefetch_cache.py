@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.data.tushare import create_tushare_pro, prefetch_tushare_strategy_cache
+from src.data.tushare import create_tushare_pro, prefetch_tushare_cache
 from src.stock_pool import resolve_stock_pool
 
 
@@ -44,7 +44,7 @@ def main() -> None:
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     pro = create_tushare_pro(args.token, http_url=args.http_url)
-    artifacts = prefetch_tushare_strategy_cache(
+    artifacts = prefetch_tushare_cache(
         pro,
         stock_pool=stock_pool,
         cache_dir=cache_dir,

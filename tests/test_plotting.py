@@ -4,73 +4,42 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.plotting import plot_portfolio_history, plot_rebalance_actions, plot_stock_lifecycle_reports
+from src.plotting import plot_expected_return_frame
 
 
 class PlottingTest(unittest.TestCase):
-    def test_plot_portfolio_history_writes_file(self) -> None:
+    def test_plot_expected_return_frame_writes_file(self) -> None:
         frame = pd.DataFrame(
             [
-                {"date": "2024-01-02", "cash": 100.0, "holdings_value": 900.0, "equity": 1000.0},
-                {"date": "2024-05-02", "cash": 150.0, "holdings_value": 900.0, "equity": 1050.0},
+                {
+                    "date": pd.Timestamp("2024-01-02"),
+                    "close": 10.0,
+                    "mean_reversion_return_3y": 0.08,
+                    "consensus_cagr_3y": 0.12,
+                    "expected_return_3y": 0.21,
+                },
+                {
+                    "date": pd.Timestamp("2024-01-03"),
+                    "close": 10.5,
+                    "mean_reversion_return_3y": 0.09,
+                    "consensus_cagr_3y": 0.11,
+                    "expected_return_3y": 0.20,
+                },
             ]
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            output = Path(tmpdir) / "portfolio_history.png"
-            plot_portfolio_history(
+            output = Path(tmpdir) / "expected_return.png"
+            plot_expected_return_frame(
                 frame,
-                rebalance_dates=(pd.Timestamp("2024-05-02"),),
+                ts_code="600519.SH",
+                start_date="20240102",
+                end_date="20240103",
                 output=output,
             )
 
             self.assertTrue(output.exists())
             self.assertGreater(output.stat().st_size, 0)
-
-    def test_plot_rebalance_actions_writes_file(self) -> None:
-        frame = pd.DataFrame(
-            [
-                {"date": "2024-05-02", "code": "AAA", "action": "BUY"},
-                {"date": "2024-05-02", "code": "BBB", "action": "SELL"},
-                {"date": "2024-11-01", "code": "CCC", "action": "HOLD"},
-            ]
-        )
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            output = Path(tmpdir) / "rebalance_actions.png"
-            plot_rebalance_actions(frame, output=output)
-
-            self.assertTrue(output.exists())
-            self.assertGreater(output.stat().st_size, 0)
-
-    def test_plot_stock_lifecycle_reports_writes_files(self) -> None:
-        price_df = pd.DataFrame(
-            [
-                {"date": "2024-01-02", "code": "AAA", "close": 10.0},
-                {"date": "2024-01-03", "code": "AAA", "close": 11.0},
-                {"date": "2024-01-04", "code": "AAA", "close": 12.0},
-            ]
-        )
-        trade_log = pd.DataFrame(
-            [
-                {"date": "2024-01-02", "code": "AAA", "action": "BUY", "shares": 10.0, "price": 10.0, "trade_value": 100.0, "signed_trade_value": 100.0},
-                {"date": "2024-01-04", "code": "AAA", "action": "SELL", "shares": 10.0, "price": 12.0, "trade_value": 120.0, "signed_trade_value": -120.0},
-            ]
-        )
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            output_dir = Path(tmpdir) / "stock_reports"
-            plot_stock_lifecycle_reports(
-                price_df,
-                trade_log,
-                output_dir=output_dir,
-                stock_name_map={"AAA": "测试股票"},
-                stock_pool=["AAA"],
-            )
-
-            self.assertTrue((output_dir / "stock_report_summary.csv").exists())
-            self.assertTrue((output_dir / "AAA.png").exists())
-            self.assertGreater((output_dir / "AAA.png").stat().st_size, 0)
 
 
 if __name__ == "__main__":

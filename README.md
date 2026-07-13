@@ -1,10 +1,15 @@
 # stock-backtest
 
-项目 Markdown 内容已统一合并到 [design.md](/root/shaopf/stock-backtest/design.md)。
+当前仓库只保留两个功能：
 
-当前建议直接阅读 `design.md`，其中已包含：
+1. 读取 [stock_pool_27.csv](stock_pool_27.csv) 并把所需 Tushare 数据缓存到本地
+2. 基于本地缓存，绘制单只股票的历史三年年化收益率走势图
 
-1. 项目概览与目录结构
-2. 环境与命令行入口
-3. 股票池、策略规则与回测设计
-4. 输出结果与测试方式
+常用命令：
+
+```bash
+conda run -n stock python prefetch_cache.py --stock-pool-file stock_pool_27.csv
+conda run -n stock python plot_expected_return.py --ts-code 600519.SH
+```
+
+更多说明见 [design.md](design.md)。

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.data.tushare_strategy import FULL_HISTORY_START_DATE, prefetch_tushare_strategy_cache
+from src.data.tushare_cache_prefetch import FULL_HISTORY_START_DATE, prefetch_tushare_cache
 
 
 class PrefetchTushareCacheTest(unittest.TestCase):
@@ -108,7 +108,7 @@ class PrefetchTushareCacheTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             cache_dir = Path(tmpdir)
             pro = FakePro()
-            artifacts = prefetch_tushare_strategy_cache(
+            artifacts = prefetch_tushare_cache(
                 pro,
                 stock_pool=["600519.SH"],
                 end_date="20241231",
@@ -217,19 +217,19 @@ class PrefetchTushareCacheTest(unittest.TestCase):
             marker.write_text("keep", encoding="utf-8")
             pro = FakePro()
 
-            prefetch_tushare_strategy_cache(
+            prefetch_tushare_cache(
                 pro,
                 stock_pool=["600519.SH"],
                 end_date="20240102",
                 cache_dir=cache_dir,
             )
-            prefetch_tushare_strategy_cache(
+            prefetch_tushare_cache(
                 pro,
                 stock_pool=["600519.SH"],
                 end_date="20240103",
                 cache_dir=cache_dir,
             )
-            prefetch_tushare_strategy_cache(
+            prefetch_tushare_cache(
                 pro,
                 stock_pool=["600519.SH"],
                 end_date="20240103",
@@ -313,7 +313,7 @@ class PrefetchTushareCacheTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             pro = FakePro()
-            prefetch_tushare_strategy_cache(
+            prefetch_tushare_cache(
                 pro,
                 stock_pool=["600519.SH"],
                 end_date="20240106",
