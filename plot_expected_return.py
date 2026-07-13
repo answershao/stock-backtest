@@ -67,20 +67,23 @@ def main() -> None:
             end_date=end_date,
             cache_dir=args.cache_dir,
         )
-        latest = frame.dropna(
-            subset=["mean_reversion_return_3y", "consensus_cagr_3y", "expected_return_3y"]
-        ).iloc[-1]
         output = output_dir / f"expected_return_{ts_code}.png"
+        latest = _resolve_latest_valid_row(frame)
+        latest_trade_date = _resolve_latest_trade_date(frame)
 
         if stock_name:
             print("股票:", f"{ts_code} {stock_name}")
         else:
             print("股票:", ts_code)
         print("样本交易日数:", len(frame))
-        print("最新交易日:", latest["date"].strftime("%Y%m%d"))
-        print(f"三年均值回归年化收益率: {latest['mean_reversion_return_3y']:.2%}")
-        print(f"卖方三年 CAGR: {latest['consensus_cagr_3y']:.2%}")
-        print(f"期望三年年化收益率: {latest['expected_return_3y']:.2%}")
+        if latest_trade_date:
+            print("最新交易日:", latest_trade_date)
+        if latest is not None:
+            print(f"三年均值回归年化收益率: {latest['mean_reversion_return_3y']:.2%}")
+            print(f"卖方三年 CAGR: {latest['consensus_cagr_3y']:.2%}")
+            print(f"期望三年年化收益率: {latest['expected_return_3y']:.2%}")
+        else:
+            print("无有效收益率样本，已跳过摘要指标输出。")
 
         plot_expected_return_frame(
             frame,
@@ -98,10 +101,12 @@ def main() -> None:
                 "ts_code": ts_code,
                 "stock_name": stock_name,
                 "sample_trade_days": len(frame),
-                "latest_trade_date": latest["date"].strftime("%Y%m%d"),
-                "mean_reversion_return_3y": latest["mean_reversion_return_3y"],
-                "consensus_cagr_3y": latest["consensus_cagr_3y"],
-                "expected_return_3y": latest["expected_return_3y"],
+                "latest_trade_date": latest_trade_date,
+                "mean_reversion_return_3y": None if latest is None else latest["mean_reversion_return_3y"],
+                "consensus_cagr_3y": None if latest is None else latest["consensus_cagr_3y"],
+                "expected_return_3y": None if latest is None else latest["expected_return_3y"],
+                "valid": latest is not None,
+                "reason": _resolve_latest_reason(frame),
                 "output_png": str(output),
             }
         )
@@ -122,6 +127,31 @@ def _load_stock_name_map(args: argparse.Namespace) -> dict[str, str]:
     if not args.stock_pool_file:
         return {}
     return load_stock_name_map(args.stock_pool_file)
+
+
+def _resolve_latest_valid_row(frame: pd.DataFrame) -> pd.Series | None:
+    valid = frame.dropna(subset=["mean_reversion_return_3y", "consensus_cagr_3y", "expected_return_3y"])
+    if valid.empty:
+        return None
+    return valid.iloc[-1]
+
+
+def _resolve_latest_trade_date(frame: pd.DataFrame) -> str | None:
+    if frame.empty:
+        return None
+    latest = frame.iloc[-1].get("date")
+    if pd.isna(latest):
+        return None
+    return pd.Timestamp(latest).strftime("%Y%m%d")
+
+
+def _resolve_latest_reason(frame: pd.DataFrame) -> str | None:
+    if frame.empty or "reason" not in frame.columns:
+        return None
+    reasons = frame["reason"].dropna()
+    if reasons.empty:
+        return None
+    return str(reasons.iloc[-1])
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

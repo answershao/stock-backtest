@@ -3,7 +3,10 @@ import unittest
 from argparse import Namespace
 from pathlib import Path
 
+import pandas as pd
+
 from plot_expected_return import _load_cli_defaults as load_plot_cli_defaults
+from plot_expected_return import _resolve_latest_reason, _resolve_latest_trade_date, _resolve_latest_valid_row
 from plot_expected_return import build_parser as build_plot_parser
 from prefetch_cache import _load_cli_defaults, build_parser, parse_args
 from src.local_config import load_local_config
@@ -107,6 +110,23 @@ class RunTushareStrategyCliTest(unittest.TestCase):
         )
 
         self.assertEqual(result, ["600519.SH", "000858.SZ"])
+
+    def test_plot_summary_helpers_handle_missing_valid_rows(self) -> None:
+        frame = pd.DataFrame(
+            [
+                {
+                    "date": pd.Timestamp("2024-01-02"),
+                    "mean_reversion_return_3y": None,
+                    "consensus_cagr_3y": None,
+                    "expected_return_3y": None,
+                    "reason": "target_pe_missing",
+                }
+            ]
+        )
+
+        self.assertIsNone(_resolve_latest_valid_row(frame))
+        self.assertEqual(_resolve_latest_trade_date(frame), "20240102")
+        self.assertEqual(_resolve_latest_reason(frame), "target_pe_missing")
 
 
 if __name__ == "__main__":

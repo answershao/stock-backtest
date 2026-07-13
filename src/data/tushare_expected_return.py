@@ -116,23 +116,80 @@ def fetch_actual_annual_eps_from_tushare(pro, ts_code: str, as_of_date: str) -> 
     if df is None or df.empty:
         return None, None, None
 
-    data = df.copy()
-    data["ann_date"] = pd.to_datetime(data["ann_date"], format="%Y%m%d", errors="coerce")
-    data["end_date"] = pd.to_datetime(data["end_date"], format="%Y%m%d", errors="coerce")
-    data["eps"] = pd.to_numeric(data["eps"], errors="coerce")
-    as_of_ts = pd.to_datetime(as_of_date, format="%Y%m%d", errors="coerce")
-    data = data.dropna(subset=["ann_date", "end_date", "eps"])
-    data = data[data["ann_date"] <= as_of_ts]
+    return resolve_base_annual_eps_with_ann_date(
+        normalize_fina_indicator_frame(df),
+        pd.to_datetime(as_of_date, format="%Y%m%d", errors="coerce"),
+    )
+
+
+def normalize_fina_indicator_frame(data: pd.DataFrame) -> pd.DataFrame:
+    frame = data.copy()
+    frame["ann_date"] = pd.to_datetime(frame["ann_date"], format="%Y%m%d", errors="coerce")
+    frame["end_date"] = pd.to_datetime(frame["end_date"], format="%Y%m%d", errors="coerce")
+    frame["eps"] = pd.to_numeric(frame["eps"], errors="coerce")
+    return frame.dropna(subset=["ann_date", "end_date", "eps"]).sort_values(["end_date", "ann_date"]).reset_index(drop=True)
+
+
+def resolve_base_annual_eps_with_ann_date(
+    fina_indicator: pd.DataFrame,
+    as_of: pd.Timestamp,
+) -> tuple[str | None, str | None, float | None]:
+    if fina_indicator.empty:
+        return None, None, None
+    data = fina_indicator[fina_indicator["ann_date"] <= as_of].copy()
+    if data.empty:
+        return None, None, None
     data = data[data["end_date"].dt.strftime("%m%d") == "1231"]
     if data.empty:
         return None, None, None
-
-    data = data.sort_values(["end_date", "ann_date"]).drop_duplicates(subset=["end_date"], keep="last")
-    latest = data.iloc[-1]
+    latest = data.sort_values(["end_date", "ann_date"]).drop_duplicates(subset=["end_date"], keep="last").iloc[-1]
     base_quarter = f"{latest['end_date'].year}Q4"
     ann_date = latest["ann_date"].strftime("%Y%m%d")
     base_eps = float(latest["eps"])
-    return base_quarter, ann_date, base_eps
+    return base_quarter, ann_date, base_eps if base_eps > 0 else None
+
+
+def build_tushare_consensus_snapshot(
+    *,
+    ts_code: str,
+    requested_as_of_date: str,
+    as_of_date: str,
+    current_pe: float | None,
+    pe_history: list[float],
+    report_df: pd.DataFrame,
+    base_quarter: str | None,
+    base_ann_date: str | None,
+    base_eps: float | None,
+    calculator: ExpectedReturn3YCalculator | None = None,
+) -> TushareConsensusSnapshot:
+    target_quarter = resolve_target_quarter(base_quarter)
+    end_eps, consensus_cagr_3y, org_count = build_consensus_growth_from_report_rc(
+        report_df,
+        target_quarter=target_quarter,
+        base_eps=base_eps,
+    )
+    result = calculate_expected_return_3y(
+        current_pe=current_pe,
+        pe_history=pe_history,
+        growth=GrowthInputs(future_3y_consensus_cagr=consensus_cagr_3y),
+        calculator=calculator,
+    )
+    return TushareConsensusSnapshot(
+        ts_code=ts_code,
+        requested_as_of_date=requested_as_of_date,
+        as_of_date=as_of_date,
+        current_pe=current_pe,
+        target_pe_sample_size=len(pe_history),
+        base_quarter=base_quarter,
+        base_ann_date=base_ann_date,
+        target_quarter=target_quarter,
+        consensus_eps_base=base_eps,
+        consensus_eps_target=end_eps,
+        consensus_cagr_3y=consensus_cagr_3y,
+        report_rows=len(report_df),
+        report_orgs=org_count,
+        result=result,
+    )
 
 
 def calculate_expected_return_3y_from_tushare(
@@ -160,32 +217,15 @@ def calculate_expected_return_3y_from_tushare(
         request.ts_code,
         effective_as_of_date,
     )
-    target_quarter = resolve_target_quarter(base_quarter)
-    end_eps, consensus_cagr_3y, org_count = build_consensus_growth_from_report_rc(
-        report_df,
-        target_quarter=target_quarter,
-        base_eps=base_eps,
-    )
-
-    result = calculate_expected_return_3y(
-        current_pe=current_pe,
-        pe_history=pe_history,
-        growth=GrowthInputs(future_3y_consensus_cagr=consensus_cagr_3y),
-        calculator=calculator,
-    )
-    return TushareConsensusSnapshot(
+    return build_tushare_consensus_snapshot(
         ts_code=request.ts_code,
         requested_as_of_date=request.as_of_date,
         as_of_date=effective_as_of_date,
         current_pe=current_pe,
-        target_pe_sample_size=len(pe_history),
+        pe_history=pe_history,
+        report_df=report_df,
         base_quarter=base_quarter,
         base_ann_date=base_ann_date,
-        target_quarter=target_quarter,
-        consensus_eps_base=base_eps,
-        consensus_eps_target=end_eps,
-        consensus_cagr_3y=consensus_cagr_3y,
-        report_rows=0 if report_df is None else len(report_df),
-        report_orgs=org_count,
-        result=result,
+        base_eps=base_eps,
+        calculator=calculator,
     )
