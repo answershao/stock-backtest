@@ -123,6 +123,28 @@ def _calc_cost(config: BacktestConfig, amount: float, is_sell: bool) -> tuple[fl
     return commission, stamp_tax, transfer_fee
 
 
+def _max_affordable_shares_for_budget(
+    config: BacktestConfig,
+    price: float,
+    budget: float,
+    is_sell: bool = False,
+) -> int:
+    """在给定预算内反推最多可成交的整手股数。"""
+    if price <= 0 or budget <= 0:
+        return 0
+
+    max_lots = int(budget // (price * 100))
+    while max_lots > 0:
+        shares = max_lots * 100
+        amount = shares * price
+        commission, stamp_tax, transfer_fee = _calc_cost(config, amount, is_sell=is_sell)
+        total_cost = amount + commission + stamp_tax + transfer_fee
+        if total_cost <= budget:
+            return shares
+        max_lots -= 1
+    return 0
+
+
 def _validate_dividend_mode(mode: str) -> str:
     """校验分红处理模式。"""
     valid_modes = {"reinvest", "cash"}
@@ -388,6 +410,14 @@ def _record_trade(
     )
 
 
+def _release_dividend_cash_for_rebalance(state: BacktestState) -> None:
+    """在调仓日前释放现金分红，允许参与本次调仓复投。"""
+    if state.dividend_cash <= 0:
+        return
+    state.investable_cash += state.dividend_cash
+    state.dividend_cash = 0.0
+
+
 def _execute_initial_buys(
     context: BacktestContext,
     today: date,
@@ -399,7 +429,11 @@ def _execute_initial_buys(
         if px is None or px <= 0:
             continue
 
-        target_shares = _round_shares(context.policy.target_value_per_stock / px)
+        target_shares = _max_affordable_shares_for_budget(
+            context.config,
+            px,
+            context.policy.target_value_per_stock,
+        )
         if target_shares <= 0:
             state.pending_initial_buys.discard(code)
             continue
@@ -509,9 +543,13 @@ def _buy_underweight_positions(
     available_cash = state.investable_cash
 
     for code, px, deficit in underweight:
-        alloc = available_cash * (deficit / total_deficit) if total_deficit > 0 else 0.0
-        alloc = min(alloc, deficit)
-        buy_shares = _round_shares(alloc / px)
+        budget = available_cash * (deficit / total_deficit) if total_deficit > 0 else 0.0
+        budget = min(budget, deficit)
+        buy_shares = _max_affordable_shares_for_budget(
+            context.config,
+            px,
+            budget,
+        )
         if buy_shares <= 0:
             continue
 
@@ -551,6 +589,8 @@ def _rebalance_if_needed(
     before_snapshot = _portfolio_snapshot(today, state, context)
     before_snapshot.phase = "before"
     state.rebalance_snapshots.append(before_snapshot)
+
+    _release_dividend_cash_for_rebalance(state)
 
     is_first_buy = all(state.shares[code] == 0 for code in context.policy.stock_codes)
     if is_first_buy:

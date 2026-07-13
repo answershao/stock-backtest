@@ -13,7 +13,12 @@ from .backtest import run_backtest
 from .config import BacktestConfig
 from .data import fetch_benchmark, fetch_daily_quotes, fetch_dividends, fetch_trade_calendar
 from .metrics import annual_returns, compute_metrics, metrics_report
-from .plot import plot_annual_returns, plot_holdings_heatmap, plot_nav_and_drawdown
+from .plot import (
+    plot_annual_returns,
+    plot_holdings_heatmap,
+    plot_nav_and_drawdown,
+    plot_stock_cost_profit_panels,
+)
 from .reporting import (
     make_output_dir,
     save_rebalance_details,
@@ -55,9 +60,8 @@ MAIN_RUNTIME_PARAMS = {
     "cache_force_refresh": False,
     "price_adj": None,
     "initial_capital": 5_000_000,
-    "target_weight": 0.05,
     "weight_tolerance": 0.001,
-    "rebalance_schedule": ["05-01", "08-01", "11-01", "02-01"],
+    "rebalance_schedule": ["05-01", "11-01"],
     "dividend_mode": "reinvest",
     "commission_rate": 0.0001,
     "commission_min": 0,
@@ -70,14 +74,20 @@ MAIN_RUNTIME_PARAMS = {
 
 def build_runtime_config() -> BacktestConfig:
     """根据 main 入口中的集中参数构建运行配置。"""
+    if not MAIN_STOCK_POOL:
+        raise ValueError("MAIN_STOCK_POOL 不能为空")
+
     return BacktestConfig(
         stock_pool=MAIN_STOCK_POOL,
+        target_weight=1 / len(MAIN_STOCK_POOL),
         **MAIN_RUNTIME_PARAMS,
     )
 
 
 def export_results(
     config: BacktestConfig,
+    quotes,
+    dividends,
     daily,
     trades,
     holdings,
@@ -115,6 +125,9 @@ def export_results(
     fig_holdings = plot_holdings_heatmap(config, holdings)
     fig_holdings.savefig(output_dir / "holdings_heatmap.png", dpi=160, bbox_inches="tight")
 
+    stock_figure = plot_stock_cost_profit_panels(config, quotes, dividends, trades, holdings, daily)
+    stock_figure.savefig(output_dir / "stock_cost_profit.png", dpi=160, bbox_inches="tight")
+
 
 def main() -> None:
     config = build_runtime_config()
@@ -145,6 +158,8 @@ def main() -> None:
     output_dir = make_output_dir()
     export_results(
         config,
+        quotes,
+        dividends,
         daily,
         trades,
         holdings,

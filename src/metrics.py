@@ -87,7 +87,9 @@ def compute_metrics(config: BacktestConfig, daily: pd.DataFrame, trades: list) -
     annual_turnover = (total_turnover / avg_nav) / years if years > 0 else 0.0
 
     # ---- 调仓统计 ----
-    rebalance_dates = set(t.date for t in trades)
+    rebalance_dates = {
+        t.date for t in trades if isinstance(getattr(t, "reason", ""), str) and t.reason.startswith("调仓-")
+    }
     rebalance_count = len(rebalance_dates)
 
     return {
