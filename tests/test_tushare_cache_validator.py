@@ -28,7 +28,36 @@ class TushareCacheValidatorTest(unittest.TestCase):
             self._write_csv(
                 cache_root / "report_rc" / "600519.SH.csv",
                 [
-                    {"report_date": "20240102", "quarter": "2024Q1", "org_name": "A", "eps": 1.0},
+                    {
+                        "report_date": "20240102",
+                        "report_title": "标题A",
+                        "report_type": "买入",
+                        "classify": "公司",
+                        "org_name": "机构A",
+                        "author_name": "作者甲",
+                        "quarter": "2025Q4",
+                        "eps": 1.0,
+                    },
+                    {
+                        "report_date": "20240102",
+                        "report_title": "标题A",
+                        "report_type": "买入",
+                        "classify": "公司",
+                        "org_name": "机构A",
+                        "author_name": "作者甲",
+                        "quarter": "2026Q4",
+                        "eps": 1.1,
+                    },
+                    {
+                        "report_date": "20240102",
+                        "report_title": "标题A",
+                        "report_type": "买入",
+                        "classify": "公司",
+                        "org_name": "机构A",
+                        "author_name": "作者甲",
+                        "quarter": "2027Q4",
+                        "eps": 1.2,
+                    },
                 ],
             )
             self._write_csv(
@@ -93,8 +122,12 @@ class TushareCacheValidatorTest(unittest.TestCase):
             rows = [
                 {
                     "report_date": f"2024{(idx % 12) + 1:02d}01",
+                    "report_title": f"title_{idx}",
+                    "report_type": "买入",
+                    "classify": "公司",
                     "quarter": f"202{idx % 4}Q4",
                     "org_name": f"org_{idx}",
+                    "author_name": f"author_{idx}",
                     "eps": float(idx + 1),
                 }
                 for idx in range(3000)
@@ -110,6 +143,45 @@ class TushareCacheValidatorTest(unittest.TestCase):
         self.assertFalse(result.ok)
         messages = "\n".join(issue.message for issue in result.issues)
         self.assertIn("可能命中分页截断", messages)
+
+    def test_validate_tushare_cache_reports_report_rc_groups_with_too_few_quarters(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_root = Path(tmpdir)
+            self._write_csv(
+                cache_root / "report_rc" / "600519.SH.csv",
+                [
+                    {
+                        "report_date": "20240102",
+                        "report_title": "标题A",
+                        "report_type": "买入",
+                        "classify": "公司",
+                        "org_name": "机构A",
+                        "author_name": "作者甲",
+                        "quarter": "2026Q4",
+                        "eps": 1.0,
+                    },
+                    {
+                        "report_date": "20240102",
+                        "report_title": "标题A",
+                        "report_type": "买入",
+                        "classify": "公司",
+                        "org_name": "机构A",
+                        "author_name": "作者甲",
+                        "quarter": "2027Q4",
+                        "eps": 1.1,
+                    },
+                ],
+            )
+
+            result = validate_tushare_cache(
+                cache_dir=cache_root,
+                stock_pool=["600519.SH"],
+                required_datasets=("report_rc",),
+            )
+
+        self.assertFalse(result.ok)
+        messages = "\n".join(issue.message for issue in result.issues)
+        self.assertIn("季度预测数少于 3", messages)
 
     @staticmethod
     def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:

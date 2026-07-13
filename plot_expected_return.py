@@ -13,7 +13,6 @@ if str(ROOT) not in sys.path:
 
 from src.local_config import DEFAULT_LOCAL_CONFIG_PATH, load_local_config
 from src.plotting import build_expected_return_frame, plot_expected_return_frame
-from src.stock_pool import load_stock_name_map, resolve_stock_pool
 
 
 def build_parser(defaults: dict[str, Any] | None = None) -> argparse.ArgumentParser:
@@ -44,14 +43,14 @@ def build_parser(defaults: dict[str, Any] | None = None) -> argparse.ArgumentPar
 
 def main() -> None:
     args = parse_args()
-    stock_pool = resolve_stock_pool(args)
+    stock_pool_map = _load_stock_pool_map(args)
+    stock_pool = list(stock_pool_map.keys())
     if not stock_pool:
         raise SystemExit("股票池为空。请在 config.local.json 中配置 stock_pool")
 
     end_date = pd.Timestamp.now().strftime("%Y%m%d")
     output_dir = Path(args.output) if args.output else Path("artifacts/expected_return")
     output_dir.mkdir(parents=True, exist_ok=True)
-    stock_name_map = _load_stock_name_map(args)
     rows: list[dict[str, Any]] = []
 
     print("股票池数量:", len(stock_pool))
@@ -60,7 +59,7 @@ def main() -> None:
     print("输出目录:", output_dir)
 
     for ts_code in stock_pool:
-        stock_name = stock_name_map.get(ts_code, "")
+        stock_name = stock_pool_map.get(ts_code, "")
         frame = build_expected_return_frame(
             ts_code=ts_code,
             start_date=args.start_date,
@@ -123,10 +122,11 @@ def _load_cli_defaults(argv: list[str] | None = None) -> dict[str, Any]:
     return load_local_config(known_args.config)
 
 
-def _load_stock_name_map(args: argparse.Namespace) -> dict[str, str]:
-    if not args.stock_pool_file:
+def _load_stock_pool_map(args: argparse.Namespace) -> dict[str, str]:
+    stock_pool = args.stock_pool
+    if not isinstance(stock_pool, dict):
         return {}
-    return load_stock_name_map(args.stock_pool_file)
+    return {str(code).strip(): str(name).strip() for code, name in stock_pool.items() if str(code).strip() and str(name).strip()}
 
 
 def _resolve_latest_valid_row(frame: pd.DataFrame) -> pd.Series | None:
@@ -160,7 +160,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     merged = {
         "config": args.config,
         "stock_pool": defaults.get("stock_pool"),
-        "stock_pool_file": defaults.get("stock_pool_file"),
         "start_date": args.start_date,
         "cache_dir": args.cache_dir,
         "output": args.output,

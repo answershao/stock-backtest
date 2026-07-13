@@ -28,7 +28,6 @@ python3 prefetch_cache.py
 说明：
 
 - `config.local.json` 可同时放 `token` 和 `stock_pool`，并且不会参与 git 提交
-- 也支持在 `config.local.json` 中配置 `stock_pool_file`
 - 只要参数已在 `config.local.json` 定义，运行时就可以不再从命令行传入
 - 会缓存 `trade_cal`、`daily`、`daily_basic`、`report_rc`、`fina_indicator`、`dividend`
 - `--refresh-datasets` 可按数据集名强制重拉，例如 `report_rc,daily_basic`

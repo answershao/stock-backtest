@@ -120,9 +120,14 @@ def _validate_stock_dataset_frame(
         return
 
     if dataset == "report_rc":
-        if not _require_columns(path, frame, {"report_date", "quarter", "org_name", "eps"}, issues):
+        if not _require_columns(
+            path,
+            frame,
+            {"report_date", "report_title", "report_type", "classify", "org_name", "author_name", "quarter", "eps"},
+            issues,
+        ):
             return
-        _validate_yyyymmdd_column(path, frame, "report_date", issues)
+        _validate_yyyymmdd_column(path, frame, "report_date", issues, allow_duplicates=True)
         _validate_report_rc_completeness(path, frame, issues)
         return
 
@@ -175,6 +180,7 @@ def _validate_yyyymmdd_column(
     frame: pd.DataFrame,
     column: str,
     issues: list[CacheValidationIssue],
+    allow_duplicates: bool = False,
 ) -> set[str]:
     if frame.empty:
         return set()
@@ -192,7 +198,7 @@ def _validate_yyyymmdd_column(
     if not parsed.is_monotonic_increasing:
         issues.append(CacheValidationIssue(path, f"{column} 未按升序排列"))
 
-    if normalized.duplicated().any():
+    if not allow_duplicates and normalized.duplicated().any():
         issues.append(CacheValidationIssue(path, f"{column} 存在重复值"))
 
     return set(normalized.tolist())
@@ -225,5 +231,25 @@ def _validate_report_rc_completeness(
             CacheValidationIssue(
                 path,
                 f"研报行数为 {REPORT_RC_PAGE_LIMIT} 的整倍数，可能命中分页截断，建议确认是否已拉取完整",
+            )
+        )
+
+    report_frame = frame.copy()
+    report_frame["report_date"] = pd.to_datetime(report_frame["report_date"].astype(str), format="%Y%m%d", errors="coerce")
+    report_frame = report_frame.dropna(
+        subset=["report_date", "report_title", "report_type", "classify", "org_name", "author_name", "quarter"]
+    )
+    if report_frame.empty:
+        return
+
+    report_id = report_frame["report_date"].dt.strftime("%Y%m%d")
+    for column in ("report_title", "report_type", "classify", "org_name", "author_name"):
+        report_id = report_id + "_" + report_frame[column].astype(str)
+    quarter_counts = report_frame.assign(report_id=report_id).groupby("report_id")["quarter"].nunique()
+    if (quarter_counts < 3).any():
+        issues.append(
+            CacheValidationIssue(
+                path,
+                "存在研报唯一ID下季度预测数少于 3 的记录，不满足 report_date+report_title+report_type+classify+org_name+author_name 校验规则",
             )
         )

@@ -4,10 +4,62 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.data.tushare_cache_prefetch import FULL_HISTORY_START_DATE, prefetch_tushare_cache
+from src.data.tushare_cache_prefetch import (
+    FULL_HISTORY_START_DATE,
+    prefetch_tushare_cache,
+    resolve_latest_available_market_data_date,
+)
 
 
 class PrefetchTushareCacheTest(unittest.TestCase):
+    def test_resolve_latest_available_market_data_date_uses_previous_trade_day_before_18(self) -> None:
+        trading_dates = (
+            pd.Timestamp("2024-01-04"),
+            pd.Timestamp("2024-01-05"),
+            pd.Timestamp("2024-01-08"),
+        )
+
+        resolved = resolve_latest_available_market_data_date(trading_dates, pd.Timestamp("2024-01-08 17:59:59"))
+
+        self.assertEqual(resolved, "20240105")
+
+    def test_resolve_latest_available_market_data_date_supports_minute_level_cutoff(self) -> None:
+        trading_dates = (
+            pd.Timestamp("2024-01-04"),
+            pd.Timestamp("2024-01-05"),
+            pd.Timestamp("2024-01-08"),
+        )
+
+        resolved = resolve_latest_available_market_data_date(
+            trading_dates,
+            pd.Timestamp("2024-01-08 17:29:59"),
+            cutoff_time="17:30",
+        )
+
+        self.assertEqual(resolved, "20240105")
+
+    def test_resolve_latest_available_market_data_date_uses_same_day_after_18_on_trade_day(self) -> None:
+        trading_dates = (
+            pd.Timestamp("2024-01-04"),
+            pd.Timestamp("2024-01-05"),
+            pd.Timestamp("2024-01-08"),
+        )
+
+        resolved = resolve_latest_available_market_data_date(trading_dates, pd.Timestamp("2024-01-08 18:00:00"))
+
+        self.assertEqual(resolved, "20240108")
+
+    def test_resolve_latest_available_market_data_date_uses_previous_trade_day_after_18_on_non_trade_day(self) -> None:
+        trading_dates = (
+            pd.Timestamp("2024-01-04"),
+            pd.Timestamp("2024-01-05"),
+            pd.Timestamp("2024-01-08"),
+        )
+
+        resolved = resolve_latest_available_market_data_date(trading_dates, pd.Timestamp("2024-01-06 18:00:00"))
+
+        self.assertEqual(resolved, "20240105")
+
     def test_report_rc_fetch_paginates_until_empty(self) -> None:
         from src.data.tushare_expected_return import fetch_report_rc_from_tushare
 
@@ -345,6 +397,50 @@ class PrefetchTushareCacheTest(unittest.TestCase):
         self.assertEqual(pro.daily_basic_args[0]["end_date"], "20240105")
         self.assertEqual(pro.dividend_args[0]["ts_code"], "600519.SH")
         self.assertIn("fields", pro.dividend_args[0])
+
+    def test_prefetch_uses_previous_trade_day_for_daily_basic_before_18_when_end_date_omitted(self) -> None:
+        class FakePro:
+            def __init__(self) -> None:
+                self.trade_cal_args = []
+                self.daily_basic_args = []
+
+            def trade_cal(self, **kwargs) -> pd.DataFrame:
+                self.trade_cal_args.append(kwargs)
+                return pd.DataFrame(
+                    [
+                        {"cal_date": "20240105", "is_open": 1},
+                        {"cal_date": "20240108", "is_open": 1},
+                    ]
+                )
+
+            def daily_basic(self, **kwargs) -> pd.DataFrame:
+                self.daily_basic_args.append(kwargs)
+                return pd.DataFrame(
+                    [
+                        {"ts_code": "600519.SH", "trade_date": "20240105", "pe_ttm": 21.0, "close": 11.0},
+                    ]
+                )
+
+            def report_rc(self, **kwargs) -> pd.DataFrame:
+                return pd.DataFrame()
+
+            def fina_indicator(self, **kwargs) -> pd.DataFrame:
+                return pd.DataFrame()
+
+            def dividend(self, **kwargs) -> pd.DataFrame:
+                return pd.DataFrame()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pro = FakePro()
+            prefetch_tushare_cache(
+                pro,
+                stock_pool=["600519.SH"],
+                cache_dir=Path(tmpdir),
+                now=pd.Timestamp("2024-01-08 17:30:00"),
+            )
+
+        self.assertEqual(pro.trade_cal_args[0]["end_date"], "20240108")
+        self.assertEqual(pro.daily_basic_args[0]["end_date"], "20240105")
 
 
 if __name__ == "__main__":

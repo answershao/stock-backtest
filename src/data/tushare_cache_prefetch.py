@@ -66,10 +66,13 @@ def prefetch_tushare_cache(
     stock_pool: list[str],
     cache_dir: str | Path,
     end_date: str | None = None,
+    now: pd.Timestamp | None = None,
+    market_data_cutoff_time: str = "18:00",
     report_rc_start_date: str = FULL_HISTORY_START_DATE,
     refresh_datasets: tuple[str, ...] = (),
 ) -> TushareCacheArtifacts:
-    resolved_end_date = end_date or pd.Timestamp.now().strftime("%Y%m%d")
+    current_time = pd.Timestamp.now() if now is None else pd.Timestamp(now)
+    calendar_end_date = end_date or current_time.strftime("%Y%m%d")
     cache_root = Path(cache_dir)
     cache = TushareDataCache(cache_root, cache_only=False)
     clear_selected_cache_files(cache_root, stock_pool=stock_pool, datasets=refresh_datasets)
@@ -77,13 +80,22 @@ def prefetch_tushare_cache(
         pro,
         cache=cache,
         start_date=FULL_HISTORY_START_DATE,
-        end_date=resolved_end_date,
+        end_date=calendar_end_date,
+    )
+    market_data_end_date = (
+        resolve_latest_available_market_data_date(
+            trading_dates,
+            current_time,
+            cutoff_time=market_data_cutoff_time,
+        )
+        if end_date is None
+        else calendar_end_date
     )
     for ts_code in stock_pool:
-        update_daily_basic_cache(pro, ts_code, cache=cache, start_date=FULL_HISTORY_START_DATE, end_date=resolved_end_date, trading_dates=trading_dates)
-        update_report_rc_cache(pro, ts_code, cache=cache, start_date=report_rc_start_date, end_date=resolved_end_date)
-        update_fina_indicator_cache(pro, ts_code, cache=cache, start_date=FULL_HISTORY_START_DATE, end_date=resolved_end_date)
-        update_dividend_cache(pro, ts_code, cache=cache, start_date=FULL_HISTORY_START_DATE, end_date=resolved_end_date)
+        update_daily_basic_cache(pro, ts_code, cache=cache, start_date=FULL_HISTORY_START_DATE, end_date=market_data_end_date, trading_dates=trading_dates)
+        update_report_rc_cache(pro, ts_code, cache=cache, start_date=report_rc_start_date, end_date=calendar_end_date)
+        update_fina_indicator_cache(pro, ts_code, cache=cache, start_date=FULL_HISTORY_START_DATE, end_date=calendar_end_date)
+        update_dividend_cache(pro, ts_code, cache=cache, start_date=FULL_HISTORY_START_DATE, end_date=calendar_end_date)
     return TushareCacheArtifacts(trading_dates=trading_dates, cache_dir=cache_root)
 
 
@@ -350,3 +362,36 @@ def resolve_trade_date_on_or_before(
     if not valid:
         return None
     return valid[-1].strftime("%Y%m%d")
+
+
+def resolve_latest_available_market_data_date(
+    trading_dates: tuple[pd.Timestamp, ...],
+    now: pd.Timestamp,
+    *,
+    cutoff_time: str = "18:00",
+) -> str | None:
+    if not trading_dates:
+        return None
+
+    current_time = pd.Timestamp(now)
+    today = current_time.normalize()
+    cutoff_hour, cutoff_minute = _parse_cutoff_time(cutoff_time)
+    cutoff_today = today + pd.Timedelta(hours=cutoff_hour, minutes=cutoff_minute)
+    if current_time < cutoff_today:
+        target_date = today - pd.Timedelta(days=1)
+    else:
+        target_date = today
+    return resolve_trade_date_on_or_before(trading_dates, target_date.strftime("%Y%m%d"))
+
+
+def _parse_cutoff_time(raw: str) -> tuple[int, int]:
+    value = str(raw).strip()
+    try:
+        hour_str, minute_str = value.split(":", maxsplit=1)
+        hour = int(hour_str)
+        minute = int(minute_str)
+    except (ValueError, AttributeError) as exc:
+        raise ValueError(f"非法行情截止时间: {raw}，格式应为 HH:MM") from exc
+    if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+        raise ValueError(f"非法行情截止时间: {raw}，格式应为 HH:MM")
+    return hour, minute

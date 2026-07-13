@@ -10,19 +10,19 @@ from plot_expected_return import _resolve_latest_reason, _resolve_latest_trade_d
 from plot_expected_return import build_parser as build_plot_parser
 from prefetch_cache import _load_cli_defaults, build_parser, parse_args
 from src.local_config import load_local_config
-from src.stock_pool import load_stock_name_map, resolve_stock_pool
+from src.stock_pool import resolve_stock_pool
 
 
 class RunTushareStrategyCliTest(unittest.TestCase):
     def test_load_local_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "config.local.json"
-            path.write_text('{"token":"abc","stock_pool":["600519.SH","000858.SZ"]}', encoding="utf-8")
+            path.write_text('{"token":"abc","stock_pool":{"600519.SH":"贵州茅台","000858.SZ":"五粮液"}}', encoding="utf-8")
 
             result = load_local_config(path)
 
         self.assertEqual(result["token"], "abc")
-        self.assertEqual(result["stock_pool"], ["600519.SH", "000858.SZ"])
+        self.assertEqual(result["stock_pool"], {"600519.SH": "贵州茅台", "000858.SZ": "五粮液"})
 
     def test_build_parser_uses_local_config_defaults(self) -> None:
         args = build_parser().parse_args([])
@@ -32,16 +32,17 @@ class RunTushareStrategyCliTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "config.local.json"
             path.write_text(
-                '{"token":"abc","stock_pool":["600519.SH"],"cache_dir":"tmp/cache","http_url":"https://example.com"}',
+                '{"token":"abc","stock_pool":{"600519.SH":"贵州茅台"},"cache_dir":"tmp/cache","http_url":"https://example.com","market_data_cutoff_time":"17:30"}',
                 encoding="utf-8",
             )
 
             args = parse_args(["--config", str(path)])
 
         self.assertEqual(args.token, "abc")
-        self.assertEqual(args.stock_pool, ["600519.SH"])
+        self.assertEqual(args.stock_pool, {"600519.SH": "贵州茅台"})
         self.assertEqual(args.cache_dir, "tmp/cache")
         self.assertEqual(args.http_url, "https://example.com")
+        self.assertEqual(args.market_data_cutoff_time, "17:30")
 
     def test_parse_args_cli_overrides_runtime_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -71,7 +72,7 @@ class RunTushareStrategyCliTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "config.local.json"
             path.write_text(
-                '{"stock_pool":["000858.SZ"],"start_date":"20180101","cache_dir":"tmp/cache","output":"tmp/out"}',
+                '{"stock_pool":{"000858.SZ":"五粮液"},"start_date":"20180101","cache_dir":"tmp/cache","output":"tmp/out"}',
                 encoding="utf-8",
             )
 
@@ -82,35 +83,10 @@ class RunTushareStrategyCliTest(unittest.TestCase):
         self.assertEqual(args.cache_dir, "tmp/cache")
         self.assertEqual(args.output, "tmp/out")
 
-    def test_resolve_stock_pool_from_file(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            path = Path(tmpdir) / "pool.csv"
-            path.write_text("name,ts_code\n贵州茅台,600519.SH\n五粮液,000858.SZ\n", encoding="utf-8")
-
-            result = resolve_stock_pool(
-                Namespace(
-                    stock_pool=None,
-                    stock_pool_file=str(path),
-                )
-            )
-
-        self.assertEqual(result, ["600519.SH", "000858.SZ"])
-
-    def test_load_stock_name_map_from_file(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            path = Path(tmpdir) / "pool.csv"
-            path.write_text("name,ts_code\n贵州茅台,600519.SH\n五粮液,000858.SZ\n", encoding="utf-8")
-
-            result = load_stock_name_map(path)
-
-        self.assertEqual(result["600519.SH"], "贵州茅台")
-        self.assertEqual(result["000858.SZ"], "五粮液")
-
-    def test_resolve_stock_pool_from_list(self) -> None:
+    def test_resolve_stock_pool_from_dict(self) -> None:
         result = resolve_stock_pool(
             Namespace(
-                stock_pool=["600519.SH", "000858.SZ"],
-                stock_pool_file=None,
+                stock_pool={"600519.SH": "贵州茅台", "000858.SZ": "五粮液"},
             )
         )
 

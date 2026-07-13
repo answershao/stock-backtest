@@ -38,7 +38,7 @@ def main() -> None:
     args = parse_args()
     stock_pool = resolve_stock_pool(args)
     if not stock_pool:
-        raise SystemExit("股票池为空。请在 config.local.json 中配置 stock_pool 或 stock_pool_file")
+        raise SystemExit("股票池为空。请在 config.local.json 中配置 stock_pool")
 
     cache_dir = Path(args.cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -59,6 +59,7 @@ def main() -> None:
         pro,
         stock_pool=stock_pool,
         cache_dir=cache_dir,
+        market_data_cutoff_time=args.market_data_cutoff_time,
         refresh_datasets=_parse_csv_option(args.refresh_datasets),
     )
     _validate_or_raise(cache_dir=cache_dir, stock_pool=stock_pool)
@@ -98,10 +99,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     merged = {
         "config": args.config,
         "stock_pool": defaults.get("stock_pool"),
-        "stock_pool_file": defaults.get("stock_pool_file"),
         "token": defaults.get("token") or os.getenv("TUSHARE_TOKEN"),
         "http_url": defaults.get("http_url", "https://tu.brze.top"),
         "cache_dir": defaults.get("cache_dir", "artifacts/tushare_cache"),
+        "market_data_cutoff_time": defaults.get("market_data_cutoff_time", "18:00"),
         "refresh_datasets": args.refresh_datasets or defaults.get("refresh_datasets"),
         "validate_only": args.validate_only,
     }
