@@ -45,7 +45,11 @@ def merge_cache_frames_with_dedupe(
     if base.empty:
         return base
     base = base.drop_duplicates()
-    base = base.sort_values(sort_columns).reset_index(drop=True)
+    available_sort_columns = [column for column in sort_columns if column in base.columns]
+    if available_sort_columns:
+        base = base.sort_values(available_sort_columns).reset_index(drop=True)
+    else:
+        base = base.reset_index(drop=True)
     if dedupe_subset:
         subset = [column for column in dedupe_subset if column in base.columns]
         if subset:

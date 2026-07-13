@@ -8,6 +8,7 @@ from src.data.tushare_analysis import (
     CachedStockAnalysisFrames,
     ExpectedReturnTimeseriesRequest,
     build_expected_return_timeseries,
+    normalize_report_rc,
 )
 
 
@@ -46,8 +47,12 @@ class TushareAnalysisTest(unittest.TestCase):
             self._write_csv(
                 cache_root / "report_rc" / "600519.SH.csv",
                 [
-                    {"org_name": "A", "quarter": "2026Q4", "report_date": "20240102", "eps": 20.0},
-                    {"org_name": "B", "quarter": "2026Q4", "report_date": "20240103", "eps": 22.0},
+                    {"org_name": "机构A", "author_name": "作者甲", "report_type": "买入", "classify": "行业", "quarter": "2025Q4", "report_date": "20240102", "report_title": "A 标题", "eps": 19.0},
+                    {"org_name": "机构A", "author_name": "作者甲", "report_type": "买入", "classify": "行业", "quarter": "2026Q4", "report_date": "20240102", "report_title": "A 标题", "eps": 21.0},
+                    {"org_name": "机构A", "author_name": "作者甲", "report_type": "买入", "classify": "行业", "quarter": "2027Q4", "report_date": "20240102", "report_title": "A 标题", "eps": 22.0},
+                    {"org_name": "机构B", "author_name": "作者乙", "report_type": "增持", "classify": "公司", "quarter": "2025Q4", "report_date": "20240103", "report_title": "B 标题", "eps": 20.0},
+                    {"org_name": "机构B", "author_name": "作者乙", "report_type": "增持", "classify": "公司", "quarter": "2026Q4", "report_date": "20240103", "report_title": "B 标题", "eps": 23.0},
+                    {"org_name": "机构B", "author_name": "作者乙", "report_type": "增持", "classify": "公司", "quarter": "2027Q4", "report_date": "20240103", "report_title": "B 标题", "eps": 25.0},
                 ],
             )
             self._write_csv(
@@ -81,8 +86,12 @@ class TushareAnalysisTest(unittest.TestCase):
         )
         report_rc = pd.DataFrame(
             [
-                {"report_date": pd.Timestamp("2024-01-02"), "quarter": "2026Q4", "org_name": "A", "eps": 20.0},
-                {"report_date": pd.Timestamp("2024-01-03"), "quarter": "2026Q4", "org_name": "B", "eps": 21.0},
+                {"report_date": pd.Timestamp("2024-01-02"), "report_title": "A 标题", "report_type": "买入", "classify": "行业", "org_name": "机构A", "author_name": "作者甲", "quarter": "2025Q4", "eps": 20.0},
+                {"report_date": pd.Timestamp("2024-01-02"), "report_title": "A 标题", "report_type": "买入", "classify": "行业", "org_name": "机构A", "author_name": "作者甲", "quarter": "2026Q4", "eps": 21.0},
+                {"report_date": pd.Timestamp("2024-01-02"), "report_title": "A 标题", "report_type": "买入", "classify": "行业", "org_name": "机构A", "author_name": "作者甲", "quarter": "2027Q4", "eps": 22.0},
+                {"report_date": pd.Timestamp("2024-01-03"), "report_title": "B 标题", "report_type": "增持", "classify": "公司", "org_name": "机构B", "author_name": "作者乙", "quarter": "2025Q4", "eps": 23.0},
+                {"report_date": pd.Timestamp("2024-01-03"), "report_title": "B 标题", "report_type": "增持", "classify": "公司", "org_name": "机构B", "author_name": "作者乙", "quarter": "2026Q4", "eps": 24.0},
+                {"report_date": pd.Timestamp("2024-01-03"), "report_title": "B 标题", "report_type": "增持", "classify": "公司", "org_name": "机构B", "author_name": "作者乙", "quarter": "2027Q4", "eps": 25.0},
             ]
         )
         fina_indicator = pd.DataFrame(
@@ -108,11 +117,55 @@ class TushareAnalysisTest(unittest.TestCase):
 
         self.assertEqual(current_pe, 11.0)
         self.assertEqual(pe_history, [10.0, 11.0])
-        self.assertEqual(len(report_as_of), 1)
+        self.assertEqual(len(report_as_of), 3)
         self.assertEqual(base_quarter, "2023Q4")
         self.assertEqual(ann_date, "20231231")
         self.assertEqual(base_eps, 10.0)
         self.assertEqual(analysis.resolve_close(pd.Timestamp("2024-01-03")), 101.0)
+
+    def test_normalize_report_rc_sorts_by_report_date_then_report_title(self) -> None:
+        normalized = normalize_report_rc(
+            pd.DataFrame(
+                [
+                    {"report_date": "20240103", "report_title": "C 标题", "report_type": "买入", "classify": "策略", "org_name": "机构C", "author_name": "作者丙", "quarter": "2025Q4", "eps": 22.0},
+                    {"report_date": "20240103", "report_title": "C 标题", "report_type": "买入", "classify": "策略", "org_name": "机构C", "author_name": "作者丙", "quarter": "2026Q4", "eps": 23.0},
+                    {"report_date": "20240103", "report_title": "C 标题", "report_type": "买入", "classify": "策略", "org_name": "机构C", "author_name": "作者丙", "quarter": "2027Q4", "eps": 24.0},
+                    {"report_date": "20240102", "report_title": "B 标题", "report_type": "增持", "classify": "行业", "org_name": "机构B", "author_name": "作者乙", "quarter": "2025Q4", "eps": 21.0},
+                    {"report_date": "20240102", "report_title": "B 标题", "report_type": "增持", "classify": "行业", "org_name": "机构B", "author_name": "作者乙", "quarter": "2026Q4", "eps": 21.5},
+                    {"report_date": "20240102", "report_title": "B 标题", "report_type": "增持", "classify": "行业", "org_name": "机构B", "author_name": "作者乙", "quarter": "2027Q4", "eps": 22.0},
+                    {"report_date": "20240102", "report_title": "A 标题", "report_type": "买入", "classify": "公司", "org_name": "机构A", "author_name": "作者甲", "quarter": "2025Q4", "eps": 20.0},
+                    {"report_date": "20240102", "report_title": "A 标题", "report_type": "买入", "classify": "公司", "org_name": "机构A", "author_name": "作者甲", "quarter": "2026Q4", "eps": 20.5},
+                    {"report_date": "20240102", "report_title": "A 标题", "report_type": "买入", "classify": "公司", "org_name": "机构A", "author_name": "作者甲", "quarter": "2027Q4", "eps": 21.0},
+                    {"report_date": "20240104", "report_title": "只剩两行", "report_type": "买入", "classify": "公司", "org_name": "机构X", "author_name": "作者X", "quarter": "2026Q4", "eps": 10.0},
+                    {"report_date": "20240104", "report_title": "只剩两行", "report_type": "买入", "classify": "公司", "org_name": "机构X", "author_name": "作者X", "quarter": "2026Q4", "eps": 11.0},
+                ]
+            )
+        )
+
+        self.assertEqual(
+            normalized["report_date"].dt.strftime("%Y%m%d").tolist(),
+            ["20240102", "20240102", "20240102", "20240102", "20240102", "20240102", "20240103", "20240103", "20240103"],
+        )
+        self.assertEqual(
+            normalized["report_title"].tolist(),
+            ["A 标题", "A 标题", "A 标题", "B 标题", "B 标题", "B 标题", "C 标题", "C 标题", "C 标题"],
+        )
+
+    def test_normalize_report_rc_drops_reports_with_fewer_than_three_rows(self) -> None:
+        normalized = normalize_report_rc(
+            pd.DataFrame(
+                [
+                    {"report_date": "20240102", "report_title": "保留", "report_type": "买入", "classify": "公司", "org_name": "机构A", "author_name": "作者甲", "quarter": "2026Q4", "eps": 20.0},
+                    {"report_date": "20240102", "report_title": "保留", "report_type": "买入", "classify": "公司", "org_name": "机构A", "author_name": "作者甲", "quarter": "2025Q4", "eps": 21.0},
+                    {"report_date": "20240102", "report_title": "保留", "report_type": "买入", "classify": "公司", "org_name": "机构A", "author_name": "作者甲", "quarter": "2027Q4", "eps": 22.0},
+                    {"report_date": "20240103", "report_title": "删除", "report_type": "增持", "classify": "行业", "org_name": "机构B", "author_name": "作者乙", "quarter": "2026Q4", "eps": 23.0},
+                    {"report_date": "20240103", "report_title": "删除", "report_type": "增持", "classify": "行业", "org_name": "机构B", "author_name": "作者乙", "quarter": "2026Q4", "eps": 24.0},
+                    {"report_date": "20240103", "report_title": "删除", "report_type": "增持", "classify": "行业", "org_name": "机构B", "author_name": "作者乙", "quarter": "2026Q4", "eps": 25.0},
+                ]
+            )
+        )
+
+        self.assertEqual(normalized["report_title"].tolist(), ["保留", "保留", "保留"])
 
     @staticmethod
     def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:

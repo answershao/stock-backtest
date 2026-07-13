@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.data.cache import TushareDataCache
+from src.data.report_rc import normalize_report_rc_frame
 from src.data.tushare_cache import sanitize_cache_key_parts
 from src.data.tushare_cache_helpers import (
     filter_frame_by_date_range,
@@ -187,7 +188,7 @@ def update_report_rc_cache(
     start_date: str,
     end_date: str,
 ) -> pd.DataFrame:
-    return update_incremental_cache(
+    frame = update_incremental_cache(
         cache=cache,
         dataset="report_rc",
         key_parts=[ts_code],
@@ -195,9 +196,17 @@ def update_report_rc_cache(
         requested_end_date=end_date,
         date_column="report_date",
         fetcher=lambda fetch_start, fetch_end: fetch_report_rc_from_tushare(pro, ts_code=ts_code, start_date=fetch_start, end_date=fetch_end),
-        empty_columns=["report_date", "quarter", "org_name", "eps"],
-        sort_columns=["report_date", "quarter", "org_name"],
+        empty_columns=["report_date", "report_title", "quarter", "org_name", "eps"],
+        sort_columns=["report_date", "report_title", "quarter", "org_name"],
     )
+    normalized = normalize_report_rc_frame(frame)
+    if "report_id" in normalized.columns:
+        normalized = normalized.drop(columns=["report_id"])
+    if "report_date" in normalized.columns:
+        normalized = normalized.copy()
+        normalized["report_date"] = normalized["report_date"].dt.strftime("%Y%m%d")
+    cache.write(dataset="report_rc", key_parts=[ts_code], frame=normalized)
+    return normalized
 
 
 def update_fina_indicator_cache(

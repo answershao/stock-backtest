@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from src.expected_return import GrowthInputs, calculate_expected_return_3y, resolve_target_quarter
+from src.data.report_rc import normalize_report_rc_frame
 from src.data.tushare_cache_helpers import read_single_cache_frame, read_stock_cache_frame
 from src.data.tushare_expected_return import (
     TushareConsensusSnapshot,
@@ -174,10 +175,10 @@ def normalize_daily_basic(data: pd.DataFrame) -> pd.DataFrame:
 
 
 def normalize_report_rc(data: pd.DataFrame) -> pd.DataFrame:
-    frame = data.copy()
-    frame["report_date"] = pd.to_datetime(frame["report_date"], format="%Y%m%d", errors="coerce")
-    frame["eps"] = pd.to_numeric(frame["eps"], errors="coerce")
-    return frame.dropna(subset=["report_date"]).sort_values(["quarter", "org_name", "report_date"]).reset_index(drop=True)
+    frame = normalize_report_rc_frame(data)
+    if "report_id" in frame.columns:
+        frame = frame.drop(columns=["report_id"])
+    return frame
 
 
 def normalize_fina_indicator(data: pd.DataFrame) -> pd.DataFrame:

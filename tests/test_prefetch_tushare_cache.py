@@ -24,8 +24,12 @@ class PrefetchTushareCacheTest(unittest.TestCase):
                     rows.append(
                         {
                             "org_name": f"org_{idx}",
+                            "author_name": f"author_{idx}",
+                            "report_type": "买入",
+                            "classify": "公司",
                             "quarter": "2026Q4",
                             "report_date": f"2024{(idx % 12) + 1:02d}01",
+                            "report_title": f"title_{idx}",
                             "eps": float(idx),
                         }
                     )
@@ -80,8 +84,11 @@ class PrefetchTushareCacheTest(unittest.TestCase):
                     return pd.DataFrame()
                 return pd.DataFrame(
                     [
-                        {"org_name": "A", "quarter": "2026Q4", "report_date": "20240101", "eps": 15.0},
-                        {"org_name": "A", "quarter": "2027Q4", "report_date": "20240101", "eps": 18.0},
+                        {"org_name": "机构A", "author_name": "作者甲", "report_type": "买入", "classify": "公司", "quarter": "2027Q4", "report_date": "20240101", "report_title": "A 标题", "eps": 18.0},
+                        {"org_name": "机构A", "author_name": "作者甲", "report_type": "买入", "classify": "公司", "quarter": "2026Q4", "report_date": "20240101", "report_title": "A 标题", "eps": 15.0},
+                        {"org_name": "机构A", "author_name": "作者甲", "report_type": "买入", "classify": "公司", "quarter": "2025Q4", "report_date": "20240101", "report_title": "A 标题", "eps": 14.0},
+                        {"org_name": "机构B", "author_name": "作者乙", "report_type": "增持", "classify": "行业", "quarter": "2024Q4", "report_date": "20240101", "report_title": "B 标题", "eps": 13.0},
+                        {"org_name": "机构B", "author_name": "作者乙", "report_type": "增持", "classify": "行业", "quarter": "2024Q4", "report_date": "20240101", "report_title": "B 标题", "eps": 12.0},
                     ][:limit]
                 )
 
@@ -143,9 +150,10 @@ class PrefetchTushareCacheTest(unittest.TestCase):
             self.assertTrue((cache_dir / "fina_indicator").exists())
             self.assertTrue((cache_dir / "dividend").exists())
             report_rc = pd.read_csv(cache_dir / "report_rc" / "600519.SH.csv")
-            self.assertEqual(report_rc.columns.tolist(), ["org_name", "quarter", "report_date", "eps"])
-            self.assertEqual(report_rc["quarter"].tolist(), ["2026Q4", "2027Q4"])
-            self.assertEqual(report_rc["eps"].tolist(), [15.0, 18.0])
+            self.assertEqual(report_rc.columns.tolist(), ["org_name", "author_name", "report_type", "classify", "quarter", "report_date", "report_title", "eps"])
+            self.assertEqual(report_rc["quarter"].tolist(), ["2025Q4", "2026Q4", "2027Q4"])
+            self.assertEqual(report_rc["report_title"].tolist(), ["A 标题", "A 标题", "A 标题"])
+            self.assertEqual(report_rc["eps"].tolist(), [14.0, 15.0, 18.0])
             fina_indicator = pd.read_csv(cache_dir / "fina_indicator" / "600519.SH.csv")
             self.assertEqual(fina_indicator["end_date"].astype(str).tolist(), ["20231231"])
             dividend = pd.read_csv(cache_dir / "dividend" / "600519.SH.csv")
@@ -195,11 +203,15 @@ class PrefetchTushareCacheTest(unittest.TestCase):
                     return pd.DataFrame()
                 rows = []
                 if start_date <= "20240102" <= end_date:
-                    rows.append({"org_name": "A", "quarter": "2026Q4", "report_date": "20240102", "eps": 15.0})
-                    rows.append({"org_name": "A", "quarter": "2027Q4", "report_date": "20240102", "eps": 18.0})
+                    rows.append({"org_name": "机构A", "author_name": "作者甲", "report_type": "买入", "classify": "公司", "quarter": "2027Q4", "report_date": "20240102", "report_title": "Alpha", "eps": 18.0})
+                    rows.append({"org_name": "机构A", "author_name": "作者甲", "report_type": "买入", "classify": "公司", "quarter": "2026Q4", "report_date": "20240102", "report_title": "Alpha", "eps": 15.0})
+                    rows.append({"org_name": "机构A", "author_name": "作者甲", "report_type": "买入", "classify": "公司", "quarter": "2025Q4", "report_date": "20240102", "report_title": "Alpha", "eps": 14.0})
                 if start_date <= "20240103" <= end_date:
-                    rows.append({"org_name": "B", "quarter": "2026Q4", "report_date": "20240103", "eps": 16.0})
-                    rows.append({"org_name": "B", "quarter": "2027Q4", "report_date": "20240103", "eps": 19.0})
+                    rows.append({"org_name": "机构D", "author_name": "作者丁", "report_type": "增持", "classify": "行业", "quarter": "2027Q4", "report_date": "20240103", "report_title": "Delta", "eps": 19.0})
+                    rows.append({"org_name": "机构D", "author_name": "作者丁", "report_type": "增持", "classify": "行业", "quarter": "2026Q4", "report_date": "20240103", "report_title": "Delta", "eps": 16.0})
+                    rows.append({"org_name": "机构D", "author_name": "作者丁", "report_type": "增持", "classify": "行业", "quarter": "2025Q4", "report_date": "20240103", "report_title": "Delta", "eps": 13.0})
+                    rows.append({"org_name": "机构X", "author_name": "作者X", "report_type": "中性", "classify": "公司", "quarter": "2024Q4", "report_date": "20240103", "report_title": "删掉", "eps": 12.0})
+                    rows.append({"org_name": "机构X", "author_name": "作者X", "report_type": "中性", "classify": "公司", "quarter": "2024Q4", "report_date": "20240103", "report_title": "删掉", "eps": 11.0})
                 return pd.DataFrame(rows)
 
             def fina_indicator(self, **kwargs) -> pd.DataFrame:
@@ -275,10 +287,11 @@ class PrefetchTushareCacheTest(unittest.TestCase):
             report_rc_files = sorted((cache_dir / "report_rc").glob("*.csv"))
             self.assertEqual([file.name for file in report_rc_files], ["600519.SH.csv"])
             report_rc = pd.read_csv(cache_dir / "report_rc" / "600519.SH.csv")
-            self.assertEqual(report_rc["report_date"].astype(str).tolist(), ["20240102", "20240102", "20240103", "20240103"])
-            self.assertEqual(report_rc["org_name"].tolist(), ["A", "A", "B", "B"])
-            self.assertEqual(report_rc["quarter"].tolist(), ["2026Q4", "2027Q4", "2026Q4", "2027Q4"])
-            self.assertEqual(report_rc["eps"].tolist(), [15.0, 18.0, 16.0, 19.0])
+            self.assertEqual(report_rc["report_date"].astype(str).tolist(), ["20240102", "20240102", "20240102", "20240103", "20240103", "20240103"])
+            self.assertEqual(report_rc["report_title"].tolist(), ["Alpha", "Alpha", "Alpha", "Delta", "Delta", "Delta"])
+            self.assertEqual(report_rc["org_name"].tolist(), ["机构A", "机构A", "机构A", "机构D", "机构D", "机构D"])
+            self.assertEqual(report_rc["quarter"].tolist(), ["2025Q4", "2026Q4", "2027Q4", "2025Q4", "2026Q4", "2027Q4"])
+            self.assertEqual(report_rc["eps"].tolist(), [14.0, 15.0, 18.0, 13.0, 16.0, 19.0])
             fina_indicator = pd.read_csv(cache_dir / "fina_indicator" / "600519.SH.csv")
             self.assertEqual(fina_indicator["end_date"].astype(str).tolist(), ["20231231"])
             self.assertEqual(fina_indicator["ann_date"].astype(str).tolist(), ["20240103"])
